@@ -635,7 +635,7 @@
   background: transparent;
 }
 
-/* Passage retrouvé depuis la conversation avec Claude : sélection dans la teinte de l'IA. */
+/* Passage retrouvé depuis la conversation avec l'assistant : sélection dans la teinte de l'IA. */
 .tiptap[data-ai-reveal] ::selection {
   background: color-mix(in srgb, var(--ai) 22%, transparent);
 }

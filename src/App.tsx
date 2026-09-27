@@ -258,7 +258,7 @@ export function App() {
     toggleSidebar,
   ]);
 
-  // ⌥Espace (ou ⌘J) : appeler Claude, avec la sélection en cours s'il y en a une.
+  // ⌥Espace (ou ⌘J) : appeler l'assistant, avec la sélection en cours s'il y en a une.
   // Depuis le panneau, le même raccourci le referme et rend la main au texte.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

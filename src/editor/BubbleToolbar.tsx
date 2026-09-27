@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { displayHref, normalizeHref } from '../lib/links';
 import { isModKey, keys } from '../lib/platform';
 import { IconButton } from '../ui/IconButton';
-import { ClaudeIcon } from '../assistant/ClaudeIcon';
+import { AssistantIcon } from '../assistant/AssistantIcon';
+import { ASSISTANT_NAME } from '../assistant/provider';
 import { openAssistant } from '../assistant/store';
 import { CheckIcon, ExternalIcon, LinkIcon, PencilIcon, UnlinkIcon } from '../ui/icons';
 import { activeMarks, MARK_BUTTONS } from './marks';
@@ -186,14 +187,14 @@ export function BubbleToolbar({ editor, docId, linkRequest }: BubbleToolbarProps
         <Separator />
         <button
           type="button"
-          data-tooltip="Demander à Claude à propos de ce passage"
+          data-tooltip={`Demander à ${ASSISTANT_NAME} à propos de ce passage`}
           onClick={() => {
             const { from, to } = editor.state.selection;
             openAssistant({ docId, from, to, text: editor.state.doc.textBetween(from, to, '\n') });
           }}
           className="flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium text-ai transition-colors duration-100 hover:bg-ai-soft focus-visible:outline-2 focus-visible:outline-accent"
         >
-          <ClaudeIcon />
+          <AssistantIcon />
           Demander
         </button>
       </div>

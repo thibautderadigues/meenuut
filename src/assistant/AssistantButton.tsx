@@ -1,6 +1,7 @@
 import { keys } from '../lib/platform';
 import { IconButton } from '../ui/IconButton';
-import { ClaudeIcon } from './ClaudeIcon';
+import { AssistantIcon } from './AssistantIcon';
+import { ASSISTANT_NAME } from './provider';
 import { toggleAssistant, useAssistant } from './store';
 
 /** Accès à l'assistant depuis la barre d'outils : discret, dans la teinte de l'IA. */
@@ -8,7 +9,7 @@ export function AssistantButton() {
   const { open } = useAssistant();
   return (
     <IconButton
-      label={open ? 'Fermer Claude' : 'Demander à Claude'}
+      label={open ? `Fermer ${ASSISTANT_NAME}` : `Demander à ${ASSISTANT_NAME}`}
       shortcut={keys('alt', 'Espace')}
       pressed={open}
       onClick={toggleAssistant}
@@ -19,7 +20,7 @@ export function AssistantButton() {
           : 'text-ink! opacity-35 hover:bg-ai-soft! hover:text-ai! hover:opacity-100 focus-visible:opacity-100'
       }
     >
-      <ClaudeIcon />
+      <AssistantIcon mono={!open} />
     </IconButton>
   );
 }

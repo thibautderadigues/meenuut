@@ -4,7 +4,8 @@ import { createDocumentWith } from '../db/documents';
 import { keys } from '../lib/platform';
 import { openDocumentRoute } from '../lib/router';
 import { IconButton } from '../ui/IconButton';
-import { ClaudeIcon } from './ClaudeIcon';
+import { AssistantIcon } from './AssistantIcon';
+import { ASSISTANT_NAME } from './provider';
 import {
   ArrowUpSendIcon,
   CloseIcon,
@@ -239,7 +240,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     if (intact) chain.setTextSelection({ from: target.from, to: target.to });
     else chain.setTextSelection(Math.min(target.from, doc.content.size - 1));
     chain.scrollIntoView().run();
-    // Teinte Claude jusqu'au prochain clic ou à la prochaine frappe dans le texte.
+    // Teinte de l'assistant jusqu'au prochain clic ou à la prochaine frappe dans le texte.
     const dom = editor.view.dom;
     dom.setAttribute('data-ai-reveal', '');
     const clear = () => {
@@ -332,9 +333,9 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
 
       <header className="flex h-12 shrink-0 items-center gap-2 px-3">
         <span className="grid size-7 place-items-center text-ai">
-          <ClaudeIcon size={18} />
+          <AssistantIcon size={16} />
         </span>
-        <h2 className="text-[13px] font-semibold text-ink">Claude</h2>
+        <h2 className="text-[13px] font-semibold text-ink">{ASSISTANT_NAME}</h2>
         <span
           className="rounded-full border border-rule-strong px-1.5 py-px text-[10px] font-medium text-ink-faint"
           data-tooltip="Réponses simulées : l’IA n’est pas encore branchée"
@@ -508,8 +509,8 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
               ref={inputRef}
               rows={1}
               value={draft}
-              placeholder={selection ? 'Que faire de ce passage ?' : 'Demander à Claude…'}
-              aria-label="Message à Claude"
+              placeholder={selection ? 'Que faire de ce passage ?' : `Demander à ${ASSISTANT_NAME}…`}
+              aria-label={`Message à ${ASSISTANT_NAME}`}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={onInputKeyDown}
               // ⌘V d'une image (capture, copie depuis le navigateur) : jointe à la question.
@@ -704,12 +705,12 @@ function QuoteBox({ text, onClick }: { text: string; onClick: () => void }) {
   );
 }
 
-/** Pendant que Claude réfléchit : le logo tourne doucement, le mot scintille. */
+/** Pendant la réflexion : les bandes du logo s'allument tour à tour, le mot scintille. */
 function Thinking() {
   return (
     <p role="status" className="flex items-center gap-2 py-0.5 text-[13px]">
       <span className="text-ai">
-        <ClaudeIcon size={16} className="animate-think" />
+        <AssistantIcon size={14} thinking />
       </span>
       <span className="animate-shimmer bg-[linear-gradient(90deg,var(--ink-faint)_0%,var(--ink-faint)_40%,var(--ink)_50%,var(--ink-faint)_60%,var(--ink-faint)_100%)] bg-[length:200%_100%] bg-clip-text text-transparent">
         Réflexion…
