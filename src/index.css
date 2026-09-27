@@ -119,15 +119,16 @@
   --animate-think: think 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
   --animate-shimmer: shimmer 1.8s linear infinite;
 
+  /* Réflexion : le logo tourne en respirant ; un tour complet, sans saut entre deux cycles. */
   @keyframes think {
     0% {
       transform: rotate(0deg) scale(1);
     }
     50% {
-      transform: rotate(90deg) scale(0.82);
+      transform: rotate(180deg) scale(0.8);
     }
     100% {
-      transform: rotate(180deg) scale(1);
+      transform: rotate(360deg) scale(1);
     }
   }
 
