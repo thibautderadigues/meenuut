@@ -23,6 +23,8 @@ export async function signOut() {
 /** Affiche l'écran de connexion, ou l'app une fois les données du compte prêtes. */
 export function AuthGate({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: 'loading' });
+  // En développement seulement : tester l'interface sans e-mail (données locales, sans synchro).
+  const [devOffline, setDevOffline] = useState(false);
 
   useEffect(() => {
     let currentId: string | null | undefined;
@@ -75,7 +77,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
       </p>
     );
   }
-  if (state.status === 'signed-out') return <Login />;
+  if (state.status === 'signed-out') {
+    if (import.meta.env.DEV && devOffline) return children;
+    return <Login onDevOffline={import.meta.env.DEV ? () => setDevOffline(true) : undefined} />;
+  }
   return (
     <UserContext.Provider key={state.user.id} value={state.user}>
       {children}

@@ -7,7 +7,7 @@ type LoginState =
   | { step: 'sent'; email: string; checking?: boolean; error?: string };
 
 /** Connexion par e-mail (lien ou code) : pas de mot de passe, le compte est créé à la première connexion. */
-export function Login() {
+export function Login({ onDevOffline }: { onDevOffline?: () => void }) {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [state, setState] = useState<LoginState>({ step: 'form' });
@@ -125,6 +125,15 @@ export function Login() {
             </p>
           )}
         </form>
+      )}
+      {onDevOffline && (
+        <button
+          type="button"
+          onClick={onDevOffline}
+          className="mt-8 self-start rounded text-xs text-ink-faint underline underline-offset-2 hover:text-ink"
+        >
+          Continuer sans connexion (développement, sans synchro)
+        </button>
       )}
     </main>
   );
