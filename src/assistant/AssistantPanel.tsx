@@ -18,6 +18,7 @@ import { chunks, mockReply, type Proposal } from './mock';
 import {
   clearSelectionContext,
   closeAssistant,
+  setSelectionContext,
   useAssistant,
   type SelectionContext,
 } from './store';
@@ -105,6 +106,21 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
   useEffect(() => {
     if (open) inputRef.current?.focus();
   }, [open, focusRequest]);
+
+  // Panneau ouvert : sélectionner du texte le joint à la question, le désélectionner l'en retire.
+  useEffect(() => {
+    if (!open || !editor || !docId) return;
+    const follow = () => {
+      const { from, to, empty } = editor.state.selection;
+      setSelectionContext(
+        empty ? null : { docId, from, to, text: editor.state.doc.textBetween(from, to, '\n') },
+      );
+    };
+    editor.on('selectionUpdate', follow);
+    return () => {
+      editor.off('selectionUpdate', follow);
+    };
+  }, [open, editor, docId]);
 
   useEffect(() => {
     const scroller = scrollRef.current;

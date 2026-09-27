@@ -47,6 +47,18 @@ export function toggleAssistant() {
   else openAssistant();
 }
 
+/** Suit la sélection de l'éditeur pendant que le panneau est ouvert (sans lui prendre le focus). */
+export function setSelectionContext(selection: SelectionContext | null) {
+  const current = state.selection;
+  if (
+    current === selection ||
+    (current && selection && current.docId === selection.docId && current.from === selection.from && current.to === selection.to)
+  ) {
+    return;
+  }
+  set({ selection });
+}
+
 export function clearSelectionContext() {
   set({ selection: null });
 }
