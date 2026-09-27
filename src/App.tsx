@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import type { Editor as TiptapEditor } from '@tiptap/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AssistantPanel } from './assistant/AssistantPanel';
-import { toggleAssistant, useAssistant } from './assistant/store';
+import { closeAssistant, openAssistant, useAssistant } from './assistant/store';
 import { Toast, type ToastData } from './chrome/Toast';
 import {
   createDocument,
@@ -258,6 +258,35 @@ export function App() {
     toggleSidebar,
   ]);
 
+  // ⌥Espace (ou ⌘J) : appeler Claude, avec la sélection en cours s'il y en a une.
+  // Depuis le panneau, le même raccourci le referme et rend la main au texte.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const altSpace = event.altKey && event.code === 'Space' && !event.metaKey && !event.ctrlKey;
+      const modJ = isModKey(event) && event.code === 'KeyJ' && !event.shiftKey && !event.altKey;
+      if (!altSpace && !modJ) return;
+      event.preventDefault();
+      if (assistant.open && document.activeElement?.closest('[data-assistant]')) {
+        closeAssistant();
+        editor?.commands.focus();
+        return;
+      }
+      const selection = editor?.state.selection;
+      openAssistant(
+        editor && openedId && selection && !selection.empty
+          ? {
+              docId: openedId,
+              from: selection.from,
+              to: selection.to,
+              text: editor.state.doc.textBetween(selection.from, selection.to, '\n'),
+            }
+          : null,
+      );
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [assistant.open, editor, openedId]);
+
   // Échap quitte le mode focus. En phase de capture : dans le texte, ProseMirror la consomme
   // (sélection du bloc parent). Un menu ou un dialogue ouvert garde la priorité.
   useEffect(() => {
@@ -279,11 +308,6 @@ export function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!isModKey(event)) return;
-      if (event.code === 'KeyJ' && !event.shiftKey && !event.altKey) {
-        event.preventDefault();
-        toggleAssistant();
-        return;
-      }
       if (event.shiftKey && event.code === 'KeyF') {
         event.preventDefault();
         toggleFocusMode();

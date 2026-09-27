@@ -4,13 +4,13 @@ import { createDocumentWith } from '../db/documents';
 import { keys } from '../lib/platform';
 import { openDocumentRoute } from '../lib/router';
 import { IconButton } from '../ui/IconButton';
+import { ClaudeIcon } from './ClaudeIcon';
 import {
   ArrowUpSendIcon,
   CloseIcon,
   CopyIcon,
   FileIcon,
   PlusIcon,
-  SparkleIcon,
   PaperclipIcon,
   StopIcon,
 } from '../ui/icons';
@@ -48,11 +48,13 @@ const fileSize = (bytes: number) =>
 type ProposalStatus = 'pending' | 'applied' | 'dismissed' | 'stale';
 
 type Message =
-  | { id: number; role: 'user'; text: string; quote: string | null; files: Attachment[] }
+  | { id: number; role: 'user'; text: string; quote: SelectionContext | null; files: Attachment[] }
   | {
       id: number;
       role: 'assistant';
       text: string;
+      /** Avant le premier mot : animation de réflexion. */
+      thinking: boolean;
       streaming: boolean;
       proposal?: Proposal;
       status?: ProposalStatus;
@@ -68,6 +70,8 @@ interface AssistantPanelProps {
 }
 
 const STREAM_INTERVAL_MS = 16;
+/** Temps de « réflexion » simulé avant la réponse. */
+const THINKING_MS = 1100;
 let messageCount = 0;
 
 const SELECTION_SUGGESTIONS = ['Reformule ce passage', 'Raccourcis-le', 'Corrige les fautes', 'Explique-moi ce passage', 'Traduis en anglais'];
@@ -126,11 +130,12 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
 
   const stop = () => {
     window.clearInterval(streamTimer.current);
+    window.clearTimeout(streamTimer.current);
     setStreaming(false);
     setMessages((list) =>
       list.map((message) =>
         message.role === 'assistant' && message.streaming
-          ? { ...message, streaming: false, proposal: undefined }
+          ? { ...message, thinking: false, streaming: false, proposal: undefined }
           : message,
       ),
     );
@@ -167,8 +172,8 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     const answerId = ++messageCount;
     setMessages((list) => [
       ...list,
-      { id: ++messageCount, role: 'user', text: prompt, quote: selection?.text ?? null, files },
-      { id: answerId, role: 'assistant', text: '', streaming: true, selection },
+      { id: ++messageCount, role: 'user', text: prompt, quote: selection, files },
+      { id: answerId, role: 'assistant', text: '', thinking: true, streaming: true, selection },
     ]);
     setDraft('');
     clearSelectionContext();
@@ -177,7 +182,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
 
     const parts = chunks(reply.text);
     let written = '';
-    streamTimer.current = window.setInterval(() => {
+    const write = () => {
       const next = parts.next();
       if (next.done) {
         window.clearInterval(streamTimer.current);
@@ -190,8 +195,28 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
         return;
       }
       written += next.value;
-      updateMessage(answerId, { text: written });
-    }, STREAM_INTERVAL_MS);
+      updateMessage(answerId, { text: written, thinking: false });
+    };
+    streamTimer.current = window.setTimeout(() => {
+      streamTimer.current = window.setInterval(write, STREAM_INTERVAL_MS);
+    }, THINKING_MS);
+  };
+
+  /** Clic sur un passage cité : on y retourne dans le document, sélectionné. */
+  const reveal = (target: SelectionContext) => {
+    if (target.docId !== docId || !editor) {
+      openDocumentRoute(target.docId);
+      return;
+    }
+    const { doc } = editor.state;
+    const intact =
+      target.to <= doc.content.size && doc.textBetween(target.from, target.to, '\n') === target.text;
+    const chain = editor.chain().focus();
+    if (intact) chain.setTextSelection({ from: target.from, to: target.to });
+    else chain.setTextSelection(Math.min(target.from, doc.content.size - 1));
+    chain.scrollIntoView().run();
+    // Sur petit écran, le panneau recouvre le texte.
+    if (!window.matchMedia('(min-width: 640px)').matches) closeAssistant();
   };
 
   const apply = async (message: Extract<Message, { role: 'assistant' }>) => {
@@ -248,6 +273,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     <aside
       data-print-hidden
       aria-label="Assistant"
+      data-assistant
       inert={!open}
       onKeyDown={onPanelKeyDown}
       onDragOver={(event) => {
@@ -269,8 +295,8 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       }`}
     >
       <header className="flex h-12 shrink-0 items-center gap-2 px-3">
-        <span className="grid size-7 place-items-center rounded-md bg-ai-soft text-ai">
-          <SparkleIcon />
+        <span className="grid size-7 place-items-center text-ai">
+          <ClaudeIcon size={18} />
         </span>
         <h2 className="text-[13px] font-semibold text-ink">Claude</h2>
         <span
@@ -292,7 +318,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
             <PlusIcon />
           </IconButton>
         )}
-        <IconButton label="Fermer" shortcut={keys('mod', 'J')} onClick={closeAssistant}>
+        <IconButton label="Fermer" shortcut={keys('alt', 'Espace')} onClick={closeAssistant}>
           <CloseIcon />
         </IconButton>
       </header>
@@ -321,26 +347,37 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
           <ol className="flex flex-col gap-5 pt-2">
             {messages.map((message) =>
               message.role === 'user' ? (
-                <li key={message.id} className="flex animate-fade-in flex-col items-end gap-1.5">
-                  {message.files.length > 0 && (
-                    <div className="flex max-w-[85%] flex-wrap justify-end gap-1">
-                      {message.files.map((file) => (
-                        <FileChip key={file.id} file={file} />
-                      ))}
+                <li
+                  key={message.id}
+                  className="animate-fade-in rounded-xl border border-rule bg-canvas p-2"
+                >
+                  {(message.quote || message.files.length > 0) && (
+                    <div className="mb-1.5 flex flex-col gap-1">
+                      {message.quote && (
+                        <QuoteBox
+                          text={message.quote.text}
+                          onClick={() => message.quote && reveal(message.quote)}
+                        />
+                      )}
+                      {message.files.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {message.files.map((file) => (
+                            <FileChip key={file.id} file={file} />
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
-                  {message.quote && (
-                    <p className="max-w-[85%] border-r-2 border-ai/40 pr-2 text-right text-xs text-ink-faint italic">
-                      {excerpt(message.quote)}
-                    </p>
-                  )}
-                  <p className="max-w-[85%] rounded-2xl rounded-br-md bg-surface px-3 py-2 text-[13px] whitespace-pre-wrap text-ink">
+                  <p className="px-1 text-[13px] leading-relaxed whitespace-pre-wrap text-ink">
                     {message.text}
                   </p>
                 </li>
               ) : (
-                <li key={message.id} className="group animate-fade-in">
-                  <p className="text-[13px] leading-relaxed whitespace-pre-wrap text-ink">
+                <li key={message.id} className="group animate-fade-in px-1">
+                  {message.thinking ? (
+                    <Thinking />
+                  ) : (
+                    <p className="text-[13px] leading-relaxed whitespace-pre-wrap text-ink">
                     {message.text}
                     {message.streaming && (
                       <span
@@ -349,6 +386,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                       />
                     )}
                   </p>
+                  )}
                   {message.proposal && message.status && (
                     <ProposalCard
                       proposal={message.proposal}
@@ -384,7 +422,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       </div>
 
       <div className="shrink-0 p-3 pt-0">
-        <div className="rounded-xl border border-rule-strong bg-canvas transition-shadow duration-100 focus-within:border-ai/60 focus-within:shadow-[0_0_0_3px_var(--ai-soft)]">
+        <div className="rounded-xl border border-rule-strong bg-canvas transition-shadow duration-100 focus-within:border-ink-faint/60">
           <div className="flex flex-wrap gap-1 px-2.5 pt-2">
             <span className="flex max-w-full items-center gap-1 rounded-md bg-surface px-1.5 py-0.5 text-[11px] text-ink-muted">
               <FileIcon />
@@ -398,13 +436,13 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
               />
             ))}
             {selection && (
-              <span className="flex max-w-full items-center gap-1 rounded-md bg-ai-soft py-0.5 pr-0.5 pl-1.5 text-[11px] text-ai">
+              <span className="flex max-w-full items-center gap-1 rounded-md bg-surface py-0.5 pr-0.5 pl-1.5 text-[11px] text-ink-muted">
                 <span className="truncate">« {excerpt(selection.text, 40)} »</span>
                 <button
                   type="button"
                   aria-label="Retirer le passage"
                   onClick={clearSelectionContext}
-                  className="grid size-4 shrink-0 place-items-center rounded hover:bg-ai-soft [&_svg]:size-3"
+                  className="grid size-4 shrink-0 place-items-center rounded hover:bg-rule [&_svg]:size-3"
                 >
                   <CloseIcon />
                 </button>
@@ -586,5 +624,34 @@ function FileChip({ file, onRemove }: { file: Attachment; onRemove?: () => void 
         <span className="w-1" />
       )}
     </span>
+  );
+}
+
+/** Passage cité, dans un petit cadre ; un clic y ramène dans le document. */
+function QuoteBox({ text, onClick }: { text: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-tooltip="Afficher dans le document"
+      className="flex w-full items-start gap-2 rounded-lg bg-surface px-2 py-1.5 text-left text-xs text-ink-muted transition-colors duration-100 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+    >
+      <span aria-hidden className="mt-px h-3.5 w-0.5 shrink-0 rounded-full bg-ink-faint/60" />
+      <span className="line-clamp-3">{text.replace(/\s+/g, ' ').trim()}</span>
+    </button>
+  );
+}
+
+/** Pendant que Claude réfléchit : le logo tourne doucement, le mot scintille. */
+function Thinking() {
+  return (
+    <p role="status" className="flex items-center gap-2 py-0.5 text-[13px]">
+      <span className="text-ai">
+        <ClaudeIcon size={16} className="animate-think" />
+      </span>
+      <span className="animate-shimmer bg-[linear-gradient(90deg,var(--ink-faint)_0%,var(--ink-faint)_40%,var(--ink)_50%,var(--ink-faint)_60%,var(--ink-faint)_100%)] bg-[length:200%_100%] bg-clip-text text-transparent">
+        Réflexion…
+      </span>
+    </p>
   );
 }

@@ -116,6 +116,29 @@
   --animate-pop-in: pop-in 120ms cubic-bezier(0.2, 0.9, 0.3, 1);
   --animate-toast-in: toast-in 160ms cubic-bezier(0.2, 0.9, 0.3, 1);
   --animate-tooltip-in: tooltip-in 100ms ease-out;
+  --animate-think: think 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  --animate-shimmer: shimmer 1.8s linear infinite;
+
+  @keyframes think {
+    0% {
+      transform: rotate(0deg) scale(1);
+    }
+    50% {
+      transform: rotate(90deg) scale(0.82);
+    }
+    100% {
+      transform: rotate(180deg) scale(1);
+    }
+  }
+
+  @keyframes shimmer {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: -100% 0;
+    }
+  }
 
   @keyframes fade-in {
     from {

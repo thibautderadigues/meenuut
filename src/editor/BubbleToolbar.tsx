@@ -5,8 +5,9 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { displayHref, normalizeHref } from '../lib/links';
 import { isModKey, keys } from '../lib/platform';
 import { IconButton } from '../ui/IconButton';
+import { ClaudeIcon } from '../assistant/ClaudeIcon';
 import { openAssistant } from '../assistant/store';
-import { CheckIcon, ExternalIcon, LinkIcon, PencilIcon, SparkleIcon, UnlinkIcon } from '../ui/icons';
+import { CheckIcon, ExternalIcon, LinkIcon, PencilIcon, UnlinkIcon } from '../ui/icons';
 import { activeMarks, MARK_BUTTONS } from './marks';
 import { ColorPicker } from './ColorPicker';
 import type { Point } from '../ui/Popover';
@@ -192,7 +193,7 @@ export function BubbleToolbar({ editor, docId, linkRequest }: BubbleToolbarProps
           }}
           className="flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium text-ai transition-colors duration-100 hover:bg-ai-soft focus-visible:outline-2 focus-visible:outline-accent"
         >
-          <SparkleIcon />
+          <ClaudeIcon />
           Demander
         </button>
       </div>
