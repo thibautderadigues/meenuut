@@ -7,6 +7,7 @@ import { keys } from '../lib/platform';
 import { openDocumentRoute } from '../lib/router';
 import { IconButton } from '../ui/IconButton';
 import { AssistantIcon } from './AssistantIcon';
+import { MAX_INSTRUCTIONS, usePersonalInstructions, withInstructions } from './instructions';
 import { ASSISTANT_NAME } from './provider';
 import {
   ArrowUpSendIcon,
@@ -15,6 +16,7 @@ import {
   FileIcon,
   PlusIcon,
   PaperclipIcon,
+  PencilIcon,
   StopIcon,
 } from '../ui/icons';
 import {
@@ -122,6 +124,8 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const instructions = usePersonalInstructions();
+  const [showInstructions, setShowInstructions] = useState(false);
 
   // Un passage d'un autre document ne vaut plus comme contexte.
   const selection = pendingSelection?.docId === docId ? pendingSelection : null;
@@ -200,7 +204,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     let request: ChatMessage[];
     if (intent === 'rewrite' && target) {
       request = [
-        { role: 'system', content: REWRITE_SYSTEM },
+        { role: 'system', content: withInstructions(REWRITE_SYSTEM, instructions.text) },
         { role: 'user', content: `Consigne : ${prompt}\n\nPassage :\n${target.text}` },
       ];
     } else {
@@ -214,7 +218,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
           ? CREATE_SYSTEM
           : chatSystem(docTitle, editor ? toMarkdown(docTitle, editor.getJSON()) : '');
       request = [
-        { role: 'system', content: system },
+        { role: 'system', content: withInstructions(system, instructions.text) },
         ...history,
         { role: 'user', content: quoted(target) + prompt + fileNote },
       ];
@@ -377,6 +381,15 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
         </span>
         <h2 className="text-[13px] font-semibold text-ink">{ASSISTANT_NAME}</h2>
         <div className="flex-1" />
+        {instructions.available && (
+          <IconButton
+            label="Mes instructions"
+            pressed={showInstructions}
+            onClick={() => setShowInstructions((shown) => !shown)}
+          >
+            <PencilIcon />
+          </IconButton>
+        )}
         {messages.length > 0 && (
           <IconButton
             label="Nouvelle conversation"
@@ -393,6 +406,35 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
           <CloseIcon />
         </IconButton>
       </header>
+
+      {showInstructions && (
+        <section className="mx-3 mb-2 animate-fade-in rounded-xl border border-rule bg-canvas p-2.5">
+          <div className="mb-1.5 flex items-baseline justify-between gap-2 px-0.5">
+            <h3 className="text-xs font-medium text-ink">Mes instructions</h3>
+            <span className={`text-[11px] ${instructions.status === 'error' ? 'text-danger' : 'text-ink-faint'}`}>
+              {instructions.status === 'saving'
+                ? 'Enregistrement…'
+                : instructions.status === 'saved'
+                  ? 'Enregistré'
+                  : instructions.status === 'error'
+                    ? 'Échec de l’enregistrement'
+                    : 'Ajoutées à chaque demande'}
+            </span>
+          </div>
+          <textarea
+            value={instructions.text}
+            maxLength={MAX_INSTRUCTIONS}
+            rows={4}
+            aria-label="Mes instructions pour l’assistant"
+            placeholder={'Ex. : Tutoie-moi. Je suis étudiant en droit. Réponses courtes, sans jargon.'}
+            onChange={(event) => instructions.setText(event.target.value)}
+            className="w-full resize-none rounded-lg bg-surface px-2.5 py-2 text-base text-ink outline-none placeholder:text-ink-faint sm:text-[13px]"
+          />
+          <p className="mt-1 px-0.5 text-[11px] text-ink-faint">
+            Enregistrées dans votre compte, sur tous vos appareils.
+          </p>
+        </section>
+      )}
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
         {messages.length === 0 ? (
