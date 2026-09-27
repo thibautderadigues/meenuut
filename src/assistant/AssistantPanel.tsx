@@ -29,6 +29,8 @@ import {
   markdownToHtml,
   REWRITE_PATTERN,
   REWRITE_SYSTEM,
+  WRITE_PATTERN,
+  writeSystem,
   splitTitle,
   streamReply,
   type ChatMessage,
@@ -195,8 +197,16 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     if (!prompt || streaming) return;
 
     const target = selection;
-    // Réécriture d'un passage → proposition de remplacement ; « crée un doc… » → nouveau document.
-    const intent = target && REWRITE_PATTERN.test(prompt) ? 'rewrite' : CREATE_PATTERN.test(prompt) ? 'create' : 'chat';
+    // Réécriture d'un extrait → remplacement ; « crée un doc… » → nouveau document ;
+    // « écris un paragraphe… » → passage à insérer ; sinon, conversation.
+    const intent =
+      target && REWRITE_PATTERN.test(prompt)
+        ? 'rewrite'
+        : CREATE_PATTERN.test(prompt)
+          ? 'create'
+          : WRITE_PATTERN.test(prompt)
+            ? 'write'
+            : 'chat';
     const fileNote = files.length
       ? `\n\n[Fichiers joints, que l’assistant ne sait pas encore lire : ${files.map((file) => file.name).join(', ')}]`
       : '';
@@ -213,10 +223,13 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
         const content = message.text || (message.proposal?.kind === 'replace' ? message.proposal.replacement : '');
         return content ? [{ role: 'assistant', content }] : [];
       });
+      const docMarkdown = editor ? toMarkdown(docTitle, editor.getJSON()) : '';
       const system =
         intent === 'create'
           ? CREATE_SYSTEM
-          : chatSystem(docTitle, editor ? toMarkdown(docTitle, editor.getJSON()) : '');
+          : intent === 'write'
+            ? writeSystem(docTitle, docMarkdown)
+            : chatSystem(docTitle, docMarkdown);
       request = [
         { role: 'system', content: withInstructions(system, instructions.text) },
         ...history,
@@ -246,13 +259,17 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
             thinking: false,
             proposal: { kind: 'replace', original: target.text, replacement: written.trim() },
           });
+        } else if (intent === 'write') {
+          updateMessage(answerId, { thinking: false, proposal: { kind: 'insert', markdown: written } });
         } else {
           updateMessage(answerId, { thinking: false, text: written });
         }
       }
       if (controller.signal.aborted) {
-        updateMessage(answerId, { status: intent === 'rewrite' ? 'dismissed' : undefined });
-      } else if (intent === 'rewrite') {
+        updateMessage(answerId, {
+          status: intent === 'rewrite' || intent === 'write' ? 'dismissed' : undefined,
+        });
+      } else if (intent === 'rewrite' || intent === 'write') {
         updateMessage(answerId, { status: written.trim() ? 'pending' : undefined });
       } else if (intent === 'create' && written.trim()) {
         const { title, body } = splitTitle(written);
@@ -305,6 +322,13 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
   const apply = async (message: Extract<Message, { role: 'assistant' }>) => {
     const { proposal } = message;
     if (!proposal) return;
+
+    if (proposal.kind === 'insert') {
+      if (!editor) return;
+      insertMarked(editor, markdownToHtml(proposal.markdown));
+      updateMessage(message.id, { status: 'applied' });
+      return;
+    }
 
     if (proposal.kind === 'create') {
       const id = await createDocumentWith({
@@ -668,7 +692,11 @@ function ProposalCard({ proposal, status, onApply, onDismiss, onOpen }: Proposal
       }`}
     >
       <p className="border-b border-rule px-3 py-1.5 text-[11px] font-medium text-ink-faint">
-        {proposal.kind === 'replace' ? 'Remplacer le passage' : 'Nouveau document'}
+        {proposal.kind === 'replace'
+          ? 'Remplacer l’extrait'
+          : proposal.kind === 'insert'
+            ? 'Insérer dans le document'
+            : 'Nouveau document'}
       </p>
 
       {proposal.kind === 'replace' ? (
@@ -676,6 +704,11 @@ function ProposalCard({ proposal, status, onApply, onDismiss, onOpen }: Proposal
           <p className="text-ink-faint line-through decoration-danger/40">{excerpt(proposal.original, 220)}</p>
           <p className="rounded bg-[var(--hl-green)] px-1 text-ink">{proposal.replacement}</p>
         </div>
+      ) : proposal.kind === 'insert' ? (
+        <div
+          className="assistant-md max-h-72 overflow-y-auto px-3 py-2.5 text-[13px] leading-relaxed text-ink"
+          dangerouslySetInnerHTML={{ __html: markdownToHtml(proposal.markdown) }}
+        />
       ) : (
         <div className="px-3 py-2.5 text-[13px]">
           <p className="flex items-center gap-1.5 font-medium text-ink">
@@ -695,7 +728,7 @@ function ProposalCard({ proposal, status, onApply, onDismiss, onOpen }: Proposal
               onClick={onApply}
               className="rounded-md bg-ink px-2.5 py-1 text-xs font-medium text-canvas hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
-              {proposal.kind === 'replace' ? 'Appliquer' : 'Créer'}
+              {proposal.kind === 'replace' ? 'Appliquer' : proposal.kind === 'insert' ? 'Insérer' : 'Créer'}
             </button>
             <button
               type="button"
@@ -709,7 +742,7 @@ function ProposalCard({ proposal, status, onApply, onDismiss, onOpen }: Proposal
         {status === 'applied' && (
           <>
             <span className="text-xs text-[var(--tx-green)]">
-              {proposal.kind === 'replace' ? '✓ Appliqué' : '✓ Créé'}
+              {proposal.kind === 'replace' ? '✓ Appliqué' : proposal.kind === 'insert' ? '✓ Inséré' : '✓ Créé'}
             </span>
             {onOpen && (
               <button

@@ -7,7 +7,8 @@ import { supabase } from '../sync/supabase';
 /** Proposition de l'assistant : rien n'est appliqué sans le clic de l'utilisateur. */
 export type Proposal =
   | { kind: 'replace'; original: string; replacement: string }
-  | { kind: 'create'; title: string; content: JSONContent; text: string };
+  | { kind: 'create'; title: string; content: JSONContent; text: string }
+  | { kind: 'insert'; markdown: string };
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -103,7 +104,8 @@ Principes :
 - Adapte la longueur : un résumé tient en quelques lignes ou en une courte liste, jamais plus d’un cinquième du texte d’origine.
 - Réponds dans la langue de la personne et reprends son registre (tutoiement ou vouvoiement).
 - Mise en forme légère en Markdown : paragraphes courts, listes seulement quand elles aident, gras avec parcimonie, pas de titres dans une réponse de quelques lignes.
-- Tu ne modifies jamais un document toi-même : la personne applique tes propositions. Ne dis donc pas « j’ai modifié » ou « j’ai créé ».`;
+- Tu ne modifies jamais un document toi-même : la personne applique tes propositions. Ne dis donc pas « j’ai modifié » ou « j’ai créé ».
+- Formats que l’éditeur sait afficher : paragraphes, titres ## et ###, listes à puces ou numérotées, cases à cocher (- [ ]), gras, italique, liens, citations (>), tableaux Markdown, blocs de code. N’utilise ni formules LaTeX ($…$), ni encadrés (> [!NOTE]), ni HTML.`;
 
 export const REWRITE_SYSTEM = `Tu réécris un extrait de document selon la consigne donnée.
 
@@ -131,11 +133,24 @@ export function chatSystem(docTitle: string, docMarkdown: string): string {
     cleaned.length > MAX
       ? `${cleaned.slice(0, MAX)}\n\n[… document tronqué : seul le début est fourni]`
       : cleaned;
-  return `${BASE}\n\nDocument ouvert : « ${docTitle || 'Sans titre'} ».\n<document>\n${body}\n</document>`;
+  return `${BASE}\n\n${documentContext(docTitle, body)}`;
+}
+
+function documentContext(docTitle: string, body: string): string {
+  return `Document ouvert : « ${docTitle || 'Sans titre'} ». Il sert de contexte : appuie-toi dessus quand la demande s’y rapporte, mais n’en imite ni le contenu ni la forme quand on te demande autre chose.\n<document>\n${body}\n</document>`;
+}
+
+/** Rédiger un passage à insérer dans le document ouvert (« écris un paragraphe sur… »). */
+export function writeSystem(docTitle: string, docMarkdown: string): string {
+  return `${chatSystem(docTitle, docMarkdown)}
+
+On te demande de rédiger un passage à insérer dans ce document. Réponds UNIQUEMENT par ce passage, prêt à être inséré : pas de préambule, pas de commentaire, pas de titre sauf si on t’en demande un. Écris un vrai texte sur le sujet demandé (ou, faute de sujet, sur celui du document), naturel et concret, dans la langue et le ton du document.`;
 }
 
 export const REWRITE_PATTERN =
   /reformul|réécri|raccourc|plus court|corrig|faute|orthographe|simplifi|tradui|anglais|english|améliore|allonge|développe/i;
+export const WRITE_PATTERN =
+  /^(écris|ecris|rédige|redige|ajoute|génère|genere|propose|fais)(-moi|\s+moi)?\s+(un|une|des|la|le|l’|l')?\s*(\S+\s+)?(paragraphe|phrase|intro|introduction|conclusion|texte|liste|tableau|section|partie|plan|exemple)/i;
 export const CREATE_PATTERN = /\b(cré|rédige|écris)\w*\s+(moi\s+)?(un|une)\s+(nouveau\s+)?(doc|document|note|page)/i;
 
 // --- Markdown → document ---
