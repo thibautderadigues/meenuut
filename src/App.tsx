@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import type { Editor as TiptapEditor } from '@tiptap/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AssistantPanel } from './assistant/AssistantPanel';
+import { newDocumentWithAssistant } from './assistant/newDocument';
 import { closeAssistant, openAssistant, useAssistant } from './assistant/store';
 import { Toast, type ToastData } from './chrome/Toast';
 import {
@@ -272,6 +273,11 @@ export function App() {
       const modJ = isModKey(event) && event.code === 'KeyJ' && !event.shiftKey && !event.altKey;
       if (!altSpace && !modJ) return;
       event.preventDefault();
+      // ⌥⇧Espace : nouveau document, écrit avec l'assistant.
+      if (altSpace && event.shiftKey) {
+        void newDocumentWithAssistant();
+        return;
+      }
       if (assistant.open && document.activeElement?.closest('[data-assistant]')) {
         closeAssistant();
         editor?.commands.focus();
