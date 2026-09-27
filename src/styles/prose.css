@@ -1155,3 +1155,32 @@
 .tiptap .ai-pending-reject:hover {
   color: var(--ink);
 }
+
+/* Réécriture proposée dans une phrase : l'ancien texte, barré, juste avant le nouveau. */
+.tiptap .ai-original {
+  margin-right: 0.2em;
+  border-radius: 3px;
+  padding: 0 0.1em;
+  color: var(--ink-faint);
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  user-select: none;
+}
+
+/* Suppression proposée : le texte reste visible, barré, jusqu'à l'acceptation. */
+.tiptap .ai-deleting {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--danger) 60%, transparent);
+}
+
+.tiptap .ai-deleting-block {
+  border-radius: 6px;
+  opacity: 0.6;
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--danger) 60%, transparent);
+  outline: 1.5px dashed color-mix(in srgb, var(--danger) 45%, transparent);
+  outline-offset: 4px;
+}

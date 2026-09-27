@@ -57,3 +57,32 @@ test('réécriture en ligne', () => {
   acceptSuggestion(e);
   expect(e.getText()).toBe('Le lion ici.');
 });
+
+test('plusieurs modifications, une par une ou toutes', async () => {
+  const { acceptAll, findText, getPendings } = await import('../aiSuggestion');
+  const e = new Editor({
+    extensions: [StarterKit, AiHighlight, AiSuggestion],
+    content: '<p>Il sont partis tôt.</p><p>Phrase inutile.</p><p>Le <strong>train</strong> était en retard.</p>',
+  });
+  // Faute corrigée dans une phrase
+  const faute = findText(e.state.doc, 'Il sont')!;
+  const a = beginSuggestion(e, faute.from, faute.to, 'inline');
+  writeSuggestion(e, 'Ils sont', a);
+  // Paragraphe entier supprimé (en suggestion : il reste visible jusqu'à l'acceptation)
+  const inutile = findText(e.state.doc, 'Phrase inutile.')!;
+  expect(inutile.wholeBlock).toBe(true);
+  const b = beginSuggestion(e, inutile.block.from, inutile.block.to, 'delete');
+  // Passage retrouvé malgré le gras (texte brut) et la syntaxe Markdown citée par l'IA
+  const retard = findText(e.state.doc, 'Le **train** était en retard')!;
+  const c = beginSuggestion(e, retard.from, retard.to, 'inline');
+  writeSuggestion(e, 'Le train est arrivé à l’heure', c);
+
+  expect(getPendings(e.state).map((p) => p.id)).toEqual([a, b, c]);
+  expect(e.getText()).toContain('Phrase inutile.');
+
+  rejectSuggestion(e, c);
+  expect(e.getText()).toContain('était en retard');
+  acceptAll(e);
+  expect(e.getHTML()).toBe('<p>Ils sont partis tôt.</p><p>Le <strong>train</strong> était en retard.</p>');
+  expect(getPendings(e.state)).toHaveLength(0);
+});

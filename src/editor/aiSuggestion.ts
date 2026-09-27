@@ -1,42 +1,58 @@
 import type { Content, Editor } from '@tiptap/core';
 import { Extension } from '@tiptap/core';
-import type { Slice } from '@tiptap/pm/model';
+import type { Node as PMNode, Slice } from '@tiptap/pm/model';
 import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { flashRange, rangeDecorations } from './aiHighlight';
 
 /**
- * Suggestion de l'assistant écrite directement dans le document, en attente de validation
- * (comme dans Cursor). Tant qu'elle est en attente :
- * - la zone est surlignée, avec « Accepter / Refuser » à sa suite ;
- * - l'assistant peut la réécrire sur place (on continue de discuter dans le panneau) ;
- * - ces écritures successives n'entrent pas dans l'historique d'annulation.
+ * Suggestions de l'assistant écrites directement dans le document, en attente de validation
+ * (comme dans Cursor). Il peut y en avoir plusieurs à la fois : une par passage modifié.
+ * Tant qu'une suggestion est en attente :
+ * - sa zone est surlignée (l'ancien texte barré juste avant, pour une réécriture dans une
+ *   phrase), avec « Accepter / Refuser » à sa suite ;
+ * - l'assistant peut la réécrire sur place ;
+ * - ces écritures n'entrent pas dans l'historique d'annulation.
  * Refuser remet le texte d'origine. Accepter en fait une seule étape annulable (⌘Z).
+ * Une suppression proposée laisse le texte en place, barré, jusqu'à l'acceptation.
  */
 
 export interface Pending {
+  id: number;
   from: number;
   to: number;
   /** Contenu remplacé, pour tout remettre si on refuse. */
   original: Slice;
-  /** block : paragraphes insérés ; inline : texte réécrit dans une phrase. */
-  kind: 'block' | 'inline';
+  /** block : paragraphes insérés ; inline : texte réécrit dans une phrase ; delete : à supprimer. */
+  kind: 'block' | 'inline' | 'delete';
 }
 
-type Meta = { set: Pending } | { range: { from: number; to: number } } | 'clear';
+type Meta =
+  | { add: Pending }
+  | { range: { id: number; from: number; to: number } }
+  | { remove: number }
+  | 'clear';
+
 export type Outcome = 'accepted' | 'rejected';
 
-const key = new PluginKey<Pending | null>('aiSuggestion');
-const settledListeners = new Set<(outcome: Outcome) => void>();
+const key = new PluginKey<Pending[]>('aiSuggestion');
+const settledListeners = new Set<(id: number, outcome: Outcome) => void>();
+let nextId = 1;
 
-/** Prévenu quand la suggestion en cours est acceptée ou refusée (depuis le texte ou le panneau). */
-export function onSuggestionSettled(listener: (outcome: Outcome) => void): () => void {
+/** Prévenu quand une suggestion est acceptée ou refusée (depuis le texte ou le panneau). */
+export function onSuggestionSettled(listener: (id: number, outcome: Outcome) => void): () => void {
   settledListeners.add(listener);
   return () => settledListeners.delete(listener);
 }
 
-export function getPending(state: EditorState): Pending | null {
-  return key.getState(state) ?? null;
+export function getPendings(state: EditorState): Pending[] {
+  return key.getState(state) ?? [];
+}
+
+/** Une suggestion précise, ou la plus récente (celle qu'une nouvelle consigne réécrit). */
+export function getPending(state: EditorState, id?: number): Pending | null {
+  const all = getPendings(state);
+  return (id === undefined ? all.at(-1) : all.find((pending) => pending.id === id)) ?? null;
 }
 
 export const AiSuggestion = Extension.create({
@@ -44,47 +60,45 @@ export const AiSuggestion = Extension.create({
 
   addKeyboardShortcuts() {
     return {
-      'Mod-Enter': () => (getPending(this.editor.state) ? acceptSuggestion(this.editor) : false),
-      Escape: () => (getPending(this.editor.state) ? rejectSuggestion(this.editor) : false),
+      'Mod-Enter': () => acceptAll(this.editor),
+      Escape: () => rejectAll(this.editor),
     };
   },
 
   addProseMirrorPlugins() {
     const editor = this.editor;
     return [
-      new Plugin<Pending | null>({
+      new Plugin<Pending[]>({
         key,
         state: {
-          init: () => null,
-          apply(tr, pending) {
+          init: () => [],
+          apply(tr, pendings) {
             const meta = tr.getMeta(key) as Meta | undefined;
-            if (meta === 'clear') return null;
-            if (meta && 'set' in meta) return meta.set;
-            if (meta && 'range' in meta) return pending && { ...pending, ...meta.range };
-            if (!pending || !tr.docChanged) return pending;
-            // Ce qu'on tape juste avant ou juste après ne fait pas partie de la suggestion.
-            const from = tr.mapping.map(pending.from, 1);
-            const to = Math.max(from, tr.mapping.map(pending.to, -1));
-            return { ...pending, from, to };
+            if (meta === 'clear') return [];
+            let next = pendings;
+            if (tr.docChanged) {
+              // Ce qu'on tape juste avant ou juste après ne fait pas partie de la suggestion.
+              next = next.map((pending) => {
+                const from = tr.mapping.map(pending.from, 1);
+                const to = Math.max(from, tr.mapping.map(pending.to, -1));
+                return { ...pending, from, to };
+              });
+            }
+            if (meta && 'add' in meta) next = [...next, meta.add];
+            if (meta && 'range' in meta) {
+              next = next.map((pending) =>
+                pending.id === meta.range.id ? { ...pending, ...meta.range } : pending,
+              );
+            }
+            if (meta && 'remove' in meta) next = next.filter((pending) => pending.id !== meta.remove);
+            return next;
           },
         },
         props: {
           decorations(state) {
-            const pending = getPending(state);
-            if (!pending) return null;
-            const marks =
-              pending.to > pending.from
-                ? rangeDecorations(state.doc, pending.from, pending.to, 'ai-pending', 'ai-pending-block')
-                : [];
-            return DecorationSet.create(state.doc, [
-              ...marks,
-              Decoration.widget(pending.to, () => controls(editor), {
-                side: 1,
-                key: 'ai-pending-controls',
-                ignoreSelection: true,
-                stopEvent: () => true,
-              }),
-            ]);
+            const pendings = getPendings(state);
+            if (pendings.length === 0) return null;
+            return DecorationSet.create(state.doc, pendings.flatMap((pending) => decorate(editor, state, pending)));
           },
         },
       }),
@@ -92,8 +106,49 @@ export const AiSuggestion = Extension.create({
   },
 });
 
-/** Boutons à la suite de la suggestion. */
-function controls(editor: Editor): HTMLElement {
+function decorate(editor: Editor, state: EditorState, pending: Pending): Decoration[] {
+  const decorations: Decoration[] = [];
+  const deleting = pending.kind === 'delete';
+  if (pending.to > pending.from) {
+    decorations.push(
+      ...rangeDecorations(
+        state.doc,
+        pending.from,
+        pending.to,
+        deleting ? 'ai-deleting' : 'ai-pending',
+        deleting ? 'ai-deleting-block' : 'ai-pending-block',
+      ),
+    );
+  }
+  // Réécriture dans une phrase : l'ancien texte, barré, juste avant le nouveau.
+  const before = pending.original.content.textBetween(0, pending.original.content.size, ' ');
+  if (pending.kind === 'inline' && before) {
+    decorations.push(
+      Decoration.widget(
+        pending.from,
+        () => {
+          const old = document.createElement('span');
+          old.className = 'ai-original';
+          old.textContent = before;
+          return old;
+        },
+        { side: -1, key: `ai-original-${pending.id}-${before.length}`, ignoreSelection: true },
+      ),
+    );
+  }
+  decorations.push(
+    Decoration.widget(pending.to, () => controls(editor, pending.id, deleting), {
+      side: 1,
+      key: `ai-pending-controls-${pending.id}`,
+      ignoreSelection: true,
+      stopEvent: () => true,
+    }),
+  );
+  return decorations;
+}
+
+/** Boutons à la suite d'une suggestion. */
+function controls(editor: Editor, id: number, deleting: boolean): HTMLElement {
   const bar = document.createElement('span');
   bar.className = 'ai-pending-bar';
   bar.contentEditable = 'false';
@@ -109,26 +164,33 @@ function controls(editor: Editor): HTMLElement {
     return element;
   };
   bar.append(
-    button('Accepter', 'Accepter (⌘↵)', 'ai-pending-accept', () => acceptSuggestion(editor)),
-    button('Refuser', 'Refuser et remettre le texte d’avant (Échap)', 'ai-pending-reject', () =>
-      rejectSuggestion(editor),
+    button(
+      deleting ? 'Supprimer' : 'Accepter',
+      'Accepter (⌘↵ : tout accepter)',
+      'ai-pending-accept',
+      () => acceptSuggestion(editor, id),
+    ),
+    button(deleting ? 'Garder' : 'Refuser', 'Refuser (Échap : tout refuser)', 'ai-pending-reject', () =>
+      rejectSuggestion(editor, id),
     ),
   );
   return bar;
 }
 
-/** Ouvre une suggestion sur l'intervalle donné (vide : simple point d'insertion). */
-export function beginSuggestion(editor: Editor, from: number, to: number, kind: Pending['kind']) {
+/** Ouvre une suggestion sur l'intervalle donné (vide : simple point d'insertion). Renvoie son id. */
+export function beginSuggestion(editor: Editor, from: number, to: number, kind: Pending['kind']): number {
   const { state } = editor;
+  const id = nextId++;
   editor.view.dispatch(
-    state.tr.setMeta(key, { set: { from, to, original: state.doc.slice(from, to), kind } }),
+    state.tr.setMeta(key, { add: { id, from, to, original: state.doc.slice(from, to), kind } }),
   );
+  return id;
 }
 
-/** Remplace le contenu de la suggestion (écriture en direct, révision). Hors historique. */
-export function writeSuggestion(editor: Editor, content: Content) {
-  const pending = getPending(editor.state);
-  if (!pending) return;
+/** Remplace le contenu d'une suggestion (écriture en direct, révision). Hors historique. */
+export function writeSuggestion(editor: Editor, content: Content, id?: number) {
+  const pending = getPending(editor.state, id);
+  if (!pending || pending.kind === 'delete') return;
   const before = editor.state.doc.content.size;
   editor
     .chain()
@@ -140,40 +202,123 @@ export function writeSuggestion(editor: Editor, content: Content) {
     .run();
   const to = pending.to + (editor.state.doc.content.size - before);
   editor.view.dispatch(
-    editor.state.tr.setMeta(key, { range: { from: pending.from, to } }).setMeta('addToHistory', false),
+    editor.state.tr
+      .setMeta(key, { range: { id: pending.id, from: pending.from, to } })
+      .setMeta('addToHistory', false),
   );
 }
 
-/** Texte actuel de la suggestion (pour la réviser). */
-export function pendingText(editor: Editor): string {
-  const pending = getPending(editor.state);
+/** Texte actuel d'une suggestion (pour la réviser). */
+export function pendingText(editor: Editor, id?: number): string {
+  const pending = getPending(editor.state, id);
   return pending ? editor.state.doc.textBetween(pending.from, pending.to, '\n\n') : '';
 }
 
-export function acceptSuggestion(editor: Editor): boolean {
-  const pending = getPending(editor.state);
+export function acceptSuggestion(editor: Editor, id?: number): boolean {
+  const pending = getPending(editor.state, id);
   if (!pending) return false;
   const { from, to, original } = pending;
-  const final = editor.state.doc.slice(from, to);
-  // Retour à l'état d'origine hors historique, puis la version finale en une seule étape :
-  // ⌘Z annule toute la suggestion d'un coup.
-  const restore = editor.state.tr.replace(from, to, original).setMeta('addToHistory', false);
-  editor.view.dispatch(restore);
-  const apply = editor.state.tr.replace(from, from + original.size, final).setMeta(key, 'clear');
-  editor.view.dispatch(apply);
-  flashRange(editor, from, from + final.size);
-  for (const listener of settledListeners) listener('accepted');
+  if (pending.kind === 'delete') {
+    editor.view.dispatch(editor.state.tr.delete(from, to).setMeta(key, { remove: pending.id }));
+  } else {
+    const final = editor.state.doc.slice(from, to);
+    // Retour à l'état d'origine hors historique, puis la version finale en une seule étape :
+    // ⌘Z annule toute la suggestion d'un coup.
+    editor.view.dispatch(editor.state.tr.replace(from, to, original).setMeta('addToHistory', false));
+    editor.view.dispatch(
+      editor.state.tr.replace(from, from + original.size, final).setMeta(key, { remove: pending.id }),
+    );
+    flashRange(editor, from, from + final.size);
+  }
+  for (const listener of settledListeners) listener(pending.id, 'accepted');
   return true;
 }
 
-export function rejectSuggestion(editor: Editor): boolean {
-  const pending = getPending(editor.state);
+export function rejectSuggestion(editor: Editor, id?: number): boolean {
+  const pending = getPending(editor.state, id);
   if (!pending) return false;
-  const tr = editor.state.tr
-    .replace(pending.from, pending.to, pending.original)
-    .setMeta(key, 'clear')
-    .setMeta('addToHistory', false);
+  const tr =
+    pending.kind === 'delete'
+      ? editor.state.tr.setMeta(key, { remove: pending.id })
+      : editor.state.tr
+          .replace(pending.from, pending.to, pending.original)
+          .setMeta(key, { remove: pending.id })
+          .setMeta('addToHistory', false);
   editor.view.dispatch(tr);
-  for (const listener of settledListeners) listener('rejected');
+  for (const listener of settledListeners) listener(pending.id, 'rejected');
   return true;
+}
+
+/** Accepte toutes les suggestions (ou celles listées). */
+export function acceptAll(editor: Editor, ids?: number[]): boolean {
+  const targets = getPendings(editor.state).filter((pending) => !ids || ids.includes(pending.id));
+  // Du bas vers le haut : chaque acceptation ne décale pas celles du dessus.
+  for (const pending of [...targets].sort((a, b) => b.from - a.from)) acceptSuggestion(editor, pending.id);
+  return targets.length > 0;
+}
+
+export function rejectAll(editor: Editor, ids?: number[]): boolean {
+  const targets = getPendings(editor.state).filter((pending) => !ids || ids.includes(pending.id));
+  for (const pending of [...targets].sort((a, b) => b.from - a.from)) rejectSuggestion(editor, pending.id);
+  return targets.length > 0;
+}
+
+/**
+ * Retrouve un passage dans le document (texte brut, sans syntaxe Markdown), à l'intérieur
+ * d'un paragraphe, titre ou élément de liste. Espaces, apostrophes et guillemets tolérés.
+ * `block` : bornes du bloc qui le contient, pour le supprimer entièrement s'il le couvre.
+ */
+export function findText(
+  doc: PMNode,
+  needle: string,
+): { from: number; to: number; wholeBlock: boolean; block: { from: number; to: number } } | null {
+  const target = normalize(stripMarkdown(needle)).trim();
+  if (!target) return null;
+
+  let found: ReturnType<typeof findText> = null;
+  doc.descendants((node, pos) => {
+    if (found) return false;
+    if (!node.isTextblock) return true;
+    // Texte du bloc et position de chaque caractère (formules et mentions n'en ont pas).
+    let text = '';
+    const positions: number[] = [];
+    node.forEach((child, offset) => {
+      if (!child.isText) return;
+      const chunk = child.text ?? '';
+      for (let i = 0; i < chunk.length; i++) positions.push(pos + 1 + offset + i);
+      text += chunk;
+    });
+    const normalized = normalize(text);
+    const index = normalized.indexOf(target);
+    if (index < 0) return false;
+    const from = positions[index];
+    const last = positions[index + target.length - 1];
+    if (from === undefined || last === undefined) return false;
+    found = {
+      from,
+      to: last + 1,
+      wholeBlock: normalized.trim() === target,
+      block: { from: pos, to: pos + node.nodeSize },
+    };
+    return false;
+  });
+  return found;
+}
+
+/** Un caractère pour un caractère (la longueur ne change pas : les positions restent valables). */
+function normalize(text: string): string {
+  return text
+    .replace(/[’‘]/g, "'")
+    .replace(/[“”«»]/g, '"')
+    .replace(/\s/g, ' ');
+}
+
+/** Retire la syntaxe Markdown courante d'un extrait cité par l'IA. */
+export function stripMarkdown(text: string): string {
+  return text
+    .replace(/^\s{0,3}(#{1,6}\s+|>\s?|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+)/gm, '')
+    .replace(/(\*\*|__|==|~~|`)/g, '')
+    .replace(/(^|[^*])\*(?!\s)([^*]+)\*/g, '$1$2')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/\s+/g, ' ');
 }

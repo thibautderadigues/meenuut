@@ -106,3 +106,8 @@ export function markdownToRichHtml(markdown: string): string {
 
   return root.innerHTML;
 }
+
+/** Markdown d'une seule ligne (gras, italique, liens…) → HTML en ligne, sans paragraphe autour. */
+export function markdownInlineToHtml(markdown: string): string {
+  return DOMPurify.sanitize(marked.parseInline(preprocess(markdown), { async: false }));
+}

@@ -7,7 +7,9 @@ export type Proposal =
   | { kind: 'create'; title: string; content: JSONContent; text: string }
   | { kind: 'insert'; markdown: string }
   /** Écrit directement dans le document, en attente d'acceptation. */
-  | { kind: 'inline'; mode: 'write' | 'rewrite' };
+  | { kind: 'inline'; mode: 'write' | 'rewrite' }
+  /** Plusieurs passages modifiés dans le document, chacun à accepter ou refuser. */
+  | { kind: 'edits'; summary: string; count: number; missing: number };
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -129,11 +131,11 @@ const RICH_FORMATS = `Quand tu écris dans un document, tu peux utiliser, en plu
 /** Préfixe d'une réponse qui demande une précision au lieu d'écrire. */
 export const QUESTION_PREFIX = 'QUESTION:';
 
-const ASK_FIRST = `Si la demande est trop vague pour écrire quelque chose de vraiment utile (sujet, but ou destinataire impossibles à deviner, même avec le document), n’écris rien et pose des questions à choix. Réponds alors uniquement par « ${QUESTION_PREFIX} » suivi d’un objet JSON, sans rien d’autre :
+const QUESTION_RULE = `QUESTION: — seulement si la demande est trop vague pour agir utilement (sujet, but ou destinataire impossibles à deviner, même avec le document). Puis un objet JSON, sans rien d’autre :
 {"questions":[{"question":"Quel ton ?","options":["Sérieux","Décontracté","Humoristique"],"multiple":false}]}
-- 1 à 3 questions courtes, 2 à 4 options courtes chacune (ne propose pas « Autre » : la personne peut toujours répondre librement) ;
-- "multiple": true si plusieurs réponses peuvent se cumuler.
-Si tu peux raisonnablement deviner, écris directement, sans poser de question.`;
+1 à 3 questions courtes, 2 à 4 options courtes chacune (pas d’option « Autre » : la personne peut toujours répondre librement) ; "multiple": true si plusieurs réponses se cumulent. Si tu peux raisonnablement deviner, agis directement.`;
+
+const CREATE_RULE = `CREATE: — créer un nouveau document, distinct de celui ouvert. Puis le document en Markdown, en commençant par « # Titre » (court et parlant) : des sections ## si le sujet le justifie, du contenu concret et directement utilisable, sans remplissage ni crochets à compléter.`;
 
 export const REWRITE_SYSTEM = `Tu réécris un extrait de document selon la consigne donnée.
 
@@ -146,57 +148,116 @@ Règles :
 - Reformuler : même idée, formulation plus claire et plus naturelle, longueur proche.
 - Garde la forme de l’extrait (une phrase reste une phrase, une liste reste une liste).`;
 
-export const CREATE_SYSTEM = `${BASE}
-
-On te demande de rédiger un nouveau document. Réponds uniquement par le document, en Markdown :
-- première ligne « # Titre » (titre court et parlant) ;
-- des sections « ## » seulement si le sujet le justifie ;
-- du contenu concret et directement utilisable, sans texte de remplissage ni crochets à compléter.
-
-${RICH_FORMATS}
-
-${ASK_FIRST}`;
-
-/** Conversation sans lien avec un document (contexte détaché). */
-export const GENERAL_SYSTEM = BASE;
-
 /** Contexte du document ouvert, sans les images (inutiles et coûteuses). */
-export function chatSystem(docTitle: string, docMarkdown: string, section = ''): string {
+function documentContext(docTitle: string, docMarkdown: string): string {
   const MAX = 60_000;
   const cleaned = docMarkdown.replace(/!\[[^\]]*\]\(data:[^)]*\)/g, '[image]');
   const body =
     cleaned.length > MAX
       ? `${cleaned.slice(0, MAX)}\n\n[… document tronqué : seul le début est fourni]`
       : cleaned;
-  const where = section ? `\n\nLa personne est actuellement dans la section « ${section} » du document.` : '';
-  return `${BASE}\n\n${documentContext(docTitle, body)}${where}`;
+  return `Document ouvert : « ${docTitle || 'Sans titre'} ».\n<document>\n${body}\n</document>`;
 }
 
-function documentContext(docTitle: string, body: string): string {
-  return `Document ouvert : « ${docTitle || 'Sans titre'} ». Il sert de contexte : appuie-toi dessus quand la demande s’y rapporte, mais n’en imite ni le contenu ni la forme quand on te demande autre chose.\n<document>\n${body}\n</document>`;
+export interface AgentContext {
+  docTitle: string;
+  docMarkdown: string;
+  /** Section où se trouve le curseur. */
+  section: string;
+  /** Ce qui entoure le curseur : là où WRITE écrira. */
+  before: string;
+  after: string;
 }
 
-/** Rédiger un passage à insérer dans le document ouvert (« écris un paragraphe sur… »). */
-export function writeSystem(docTitle: string, docMarkdown: string, section = ''): string {
-  return `${chatSystem(docTitle, docMarkdown, section)}
+/**
+ * Consigne de l'agent : l'IA choisit elle-même comment répondre à la demande — répondre,
+ * modifier le document (EDITS), écrire au curseur (WRITE), créer un document (CREATE)
+ * ou poser des questions (QUESTION). Sans document (`context` nul) : répondre, créer, demander.
+ */
+export function agentSystem(context: AgentContext | null): string {
+  if (!context) {
+    return `${BASE}
 
-On te demande de rédiger un passage à insérer dans ce document, à l’endroit indiqué. Il doit s’y intégrer naturellement : dans la suite logique de ce qui précède, sans répéter ce qui est déjà écrit, dans la langue et le ton du document. Réponds UNIQUEMENT par ce passage, prêt à être inséré : pas de préambule, pas de commentaire, pas de titre sauf si on t’en demande un. Écris un vrai texte, concret, sur le sujet demandé (ou, faute de sujet, sur celui du document).
+Commence ta réponse par l’une de ces formes :
+1. Répondre : écris directement ta réponse, en Markdown simple.
+2. ${CREATE_RULE}
+3. ${QUESTION_RULE}
 
-${RICH_FORMATS}
+Quand la personne demande de créer, rédiger ou préparer un document (une fiche, un résumé, un plan…), utilise CREATE : ne lui donne pas un texte à copier-coller.
 
-${ASK_FIRST}`;
+${RICH_FORMATS}`;
+  }
+  const where = context.section ? ` Le curseur est dans la section « ${context.section} ».` : '';
+  return `${BASE}
+
+${documentContext(context.docTitle, context.docMarkdown)}
+
+Tu peux agir sur ce document.${where} Commence ta réponse par l’une de ces formes :
+1. Répondre (question, explication, avis) : écris directement ta réponse, en Markdown simple.
+2. EDITS: — modifier le document ouvert : corriger, reformuler, compléter ou supprimer des passages existants, ou ajouter un paragraphe à un endroit précis. Puis un objet JSON, sans rien d’autre :
+{"summary":"ce que tu changes, en une phrase","edits":[{"find":"passage exact du document","replace":"nouveau texte"},{"after":"passage exact du document","insert":"nouveau paragraphe en Markdown"}]}
+   - « find » et « after » recopient mot pour mot un passage du document, en texte brut (sans #, **, ==, > ni autre syntaxe Markdown), à l’intérieur d’un seul paragraphe ou titre ; prends une phrase entière pour qu’il soit unique.
+   - « replace » : le nouveau texte de ce passage (gras et italique en Markdown possibles) ; vide pour le supprimer.
+   - « insert » : un ou plusieurs paragraphes ajoutés juste après le paragraphe qui contient « after ».
+   - Une entrée par passage changé ; ne touche pas au reste. Autant d’entrées que nécessaire pour tout faire.
+3. WRITE: — écrire un nouveau passage à l’emplacement du curseur, entre « ${context.before || '(début du document)'} » et « ${context.after || '(fin du document)'} ». Puis le passage en Markdown, qui s’intègre dans la suite logique de ce qui précède, sans le répéter, dans le ton du document.
+4. ${CREATE_RULE}
+5. ${QUESTION_RULE}
+
+Quand la personne demande d’agir sur le document (corrige, modifie, ajoute, supprime, réécris, complète, améliore…), agis avec EDITS (pour changer ce qui existe) ou WRITE (pour ajouter un passage au curseur). Ne décris jamais des changements à faire et ne demande jamais de copier-coller : fais-les.
+
+${RICH_FORMATS}`;
+}
+
+export type Action = 'answer' | 'edits' | 'write' | 'create' | 'question';
+
+const ACTIONS: [string, Action][] = [
+  ['EDITS:', 'edits'],
+  ['WRITE:', 'write'],
+  ['CREATE:', 'create'],
+  [QUESTION_PREFIX, 'question'],
+];
+
+/** Forme de la réponse d'après son début ; null tant qu'on ne peut pas encore trancher. */
+export function detectAction(text: string): Action | null {
+  const head = text.trimStart().replace(/^[*_`#\s]+/, '').toUpperCase();
+  for (const [prefix, action] of ACTIONS) if (head.startsWith(prefix)) return action;
+  if (ACTIONS.some(([prefix]) => prefix.startsWith(head))) return null;
+  return 'answer';
+}
+
+/** Le contenu après le préfixe d'action. */
+export function stripAction(text: string): string {
+  return text.trimStart().replace(/^[*_`#\s]*(EDITS|WRITE|CREATE|QUESTION):[*_`]*\s*/i, '');
+}
+
+export type EditOp = { find: string; replace: string } | { after: string; insert: string };
+
+/** « EDITS: {…} » → résumé et modifications ; null si le JSON est absent ou invalide. */
+export function parseEdits(text: string): { summary: string; edits: EditOp[] } | null {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    const data = JSON.parse(text.slice(start, end + 1)) as { summary?: unknown; edits?: unknown };
+    if (!Array.isArray(data.edits)) return null;
+    const edits = data.edits.flatMap((item: Record<string, unknown>): EditOp[] => {
+      if (typeof item?.find === 'string' && item.find.trim()) {
+        return [{ find: item.find, replace: typeof item.replace === 'string' ? item.replace : '' }];
+      }
+      if (typeof item?.after === 'string' && typeof item?.insert === 'string' && item.insert.trim()) {
+        return [{ after: item.after, insert: item.insert }];
+      }
+      return [];
+    });
+    return edits.length ? { summary: String(data.summary ?? '').trim(), edits } : null;
+  } catch {
+    return null;
+  }
 }
 
 export const REWRITE_PATTERN =
   /reformul|réécri|raccourc|plus court|corrig|faute|orthographe|simplifi|tradui|anglais|english|améliore|allonge|développe/i;
-export const WRITE_PATTERN =
-  /^(continue|poursuis|termine)\b|^(écris|ecris|rédige|redige|ajoute|génère|genere|propose|fais)(-moi|\s+moi)?\s+(un|une|des|la|le|l’|l')?\s*(\S+\s+)?(paragraphe|phrase|intro|introduction|conclusion|texte|liste|tableau|section|partie|plan|exemple)/i;
-/**
- * « Crée un doc… », « crée-moi vite fait un document… », « fais-moi une fiche… », « nouveau document… ».
- * Pas « ajoute une note à ce document » (c'est une écriture dans le document ouvert).
- */
-export const CREATE_PATTERN =
-  /(^|\s)(cré\w*|crée\w*|nouveau|nouvelle|(rédige|écris|ecris|fais|génère|genere|prépare|prepare)(-moi|\s+moi)?\s+(un|une))\b[^.?!]{0,40}?\b(doc|docs|document|fiche|page|note)\b(?!\s*(ouvert|actuel))/i;
 
 /** « # Titre » en tête → titre du document, le reste → contenu. */
 export function splitTitle(markdown: string): { title: string; body: string } {
