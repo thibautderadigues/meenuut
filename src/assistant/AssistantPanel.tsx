@@ -239,6 +239,16 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     if (intact) chain.setTextSelection({ from: target.from, to: target.to });
     else chain.setTextSelection(Math.min(target.from, doc.content.size - 1));
     chain.scrollIntoView().run();
+    // Teinte Claude jusqu'au prochain clic ou à la prochaine frappe dans le texte.
+    const dom = editor.view.dom;
+    dom.setAttribute('data-ai-reveal', '');
+    const clear = () => {
+      dom.removeAttribute('data-ai-reveal');
+      dom.removeEventListener('mousedown', clear);
+      dom.removeEventListener('keydown', clear);
+    };
+    dom.addEventListener('mousedown', clear);
+    dom.addEventListener('keydown', clear);
     // Sur petit écran, le panneau recouvre le texte.
     if (!window.matchMedia('(min-width: 640px)').matches) closeAssistant();
   };

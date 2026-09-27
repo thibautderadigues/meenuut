@@ -635,6 +635,11 @@
   background: transparent;
 }
 
+/* Passage retrouvé depuis la conversation avec Claude : sélection dans la teinte de l'IA. */
+.tiptap[data-ai-reveal] ::selection {
+  background: color-mix(in srgb, var(--ai) 22%, transparent);
+}
+
 /* ————— Blocs spéciaux ————— */
 
 /* Encadrés : la couleur choisie définit la teinte de l'icône et du fond. */
