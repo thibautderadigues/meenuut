@@ -136,8 +136,8 @@ export function Editor({ doc, title, focusMode, onEditor }: EditorProps) {
             <Toolbar editor={editor} onLink={() => setLinkRequest((count) => count + 1)} />
           </div>
           <div className="flex items-center gap-0.5 pr-2 sm:pr-3">
-            <SyncIndicator />
             <AssistantButton />
+            <SyncIndicator />
           </div>
         </div>
         <div className="doc-column pt-[6vh]">

@@ -1,5 +1,5 @@
 import type { Editor } from '@tiptap/react';
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createDocumentWith } from '../db/documents';
 import { keys } from '../lib/platform';
 import { openDocumentRoute } from '../lib/router';
@@ -290,10 +290,12 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
         setDragging(false);
         addFiles(event.dataTransfer.files);
       }}
-      className={`fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-rule bg-sidebar font-sans transition-transform duration-200 ease-out sm:w-[22rem] ${
+      className={`fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-rule bg-sidebar font-sans transition-transform duration-200 ease-out sm:w-(--assistant-width) ${
         open ? 'translate-x-0' : 'translate-x-full'
       }`}
     >
+      <ResizeHandle />
+
       <header className="flex h-12 shrink-0 items-center gap-2 px-3">
         <span className="grid size-7 place-items-center text-ai">
           <ClaudeIcon size={18} />
@@ -653,5 +655,76 @@ function Thinking() {
         Réflexion…
       </span>
     </p>
+  );
+}
+
+const WIDTH_KEY = 'assistant-width';
+const MIN_WIDTH = 300;
+const DEFAULT_WIDTH = 352;
+const maxWidth = () => Math.max(MIN_WIDTH, Math.min(720, window.innerWidth * 0.6));
+
+function setWidth(width: number) {
+  const clamped = Math.round(Math.min(maxWidth(), Math.max(MIN_WIDTH, width)));
+  document.documentElement.style.setProperty('--assistant-width', `${clamped}px`);
+  return clamped;
+}
+
+// Largeur mémorisée, appliquée avant le premier rendu du panneau.
+setWidth(
+  (() => {
+    try {
+      return Number(localStorage.getItem(WIDTH_KEY)) || DEFAULT_WIDTH;
+    } catch {
+      return DEFAULT_WIDTH;
+    }
+  })(),
+);
+
+/** Bord gauche du panneau : glisser pour redimensionner, double-clic pour la largeur par défaut. */
+function ResizeHandle() {
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+    document.documentElement.dataset.resizing = '';
+    let width = DEFAULT_WIDTH;
+
+    const onMove = (move: PointerEvent) => {
+      width = setWidth(window.innerWidth - move.clientX);
+    };
+    const onUp = () => {
+      delete document.documentElement.dataset.resizing;
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onUp);
+      try {
+        localStorage.setItem(WIDTH_KEY, String(width));
+      } catch {
+        // Largeur non mémorisée : sans conséquence.
+      }
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onUp);
+  };
+
+  const reset = () => {
+    setWidth(DEFAULT_WIDTH);
+    try {
+      localStorage.removeItem(WIDTH_KEY);
+    } catch {
+      // Sans conséquence.
+    }
+  };
+
+  return (
+    <div
+      aria-hidden
+      onPointerDown={onPointerDown}
+      onDoubleClick={reset}
+      className="group absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize max-sm:hidden"
+    >
+      <div className="mx-auto h-full w-px bg-transparent transition-colors duration-100 group-hover:bg-ink-faint/50 group-active:bg-ai/60" />
+    </div>
   );
 }

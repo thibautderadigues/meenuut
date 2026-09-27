@@ -237,3 +237,11 @@
     animation: none;
   }
 }
+
+/* Redimensionnement du panneau Claude : pas d'animation ni de sélection de texte pendant le geste. */
+[data-resizing],
+[data-resizing] * {
+  cursor: col-resize !important;
+  user-select: none !important;
+  transition: none !important;
+}

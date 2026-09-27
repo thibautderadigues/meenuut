@@ -393,7 +393,7 @@ export function App() {
 
       <div
         data-print-full
-        className={`transition-[padding] duration-150 ease-out ${sidebarOpen && !focusMode ? 'md:pl-64' : ''} ${assistant.open ? 'lg:pr-[22rem]' : ''}`}
+        className={`transition-[padding] duration-150 ease-out ${sidebarOpen && !focusMode ? 'md:pl-64' : ''} ${assistant.open ? 'lg:pr-(--assistant-width)' : ''}`}
       >
         {opened && (
           <Editor

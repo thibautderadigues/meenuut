@@ -12,7 +12,12 @@ export function AssistantButton() {
       shortcut={keys('alt', 'Espace')}
       pressed={open}
       onClick={toggleAssistant}
-      className="text-ai! hover:bg-ai-soft!"
+      // Discret tant qu'on ne s'en sert pas : noir, estompé ; en couleur au survol ou ouvert.
+      className={
+        open
+          ? 'bg-ai-soft! text-ai!'
+          : 'text-ink! opacity-35 hover:bg-ai-soft! hover:text-ai! hover:opacity-100 focus-visible:opacity-100'
+      }
     >
       <ClaudeIcon />
     </IconButton>
