@@ -2,11 +2,13 @@
 // La clé Mistral reste ici (secret MISTRAL_API_KEY), jamais dans le navigateur.
 // Seuls les utilisateurs connectés à Meenuut peuvent l'appeler.
 
-const MODELS: Record<string, string> = {
+// Par ordre de préférence. En offre gratuite, un modèle saturé répond 429 (« capacity
+// exceeded ») même au premier appel : on passe alors au suivant, plus disponible.
+const MODELS: Record<string, string[]> = {
   // Retouches rapides (reformuler, corriger…) : petit modèle, rapide et économe.
-  quick: 'mistral-small-latest',
+  quick: ['mistral-small-latest', 'open-mistral-nemo'],
   // Questions, rédaction de documents.
-  chat: 'mistral-medium-latest',
+  chat: ['mistral-medium-latest', 'mistral-small-latest', 'open-mistral-nemo'],
 };
 
 const MAX_MESSAGES = 40;
@@ -67,21 +69,29 @@ Deno.serve(async (req) => {
     return json(400, { error: 'invalid_messages' });
   }
 
-  const upstream = await fetch('https://api.mistral.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: MODELS[body.mode ?? 'chat'] ?? MODELS.chat,
-      messages,
-      stream: true,
-      max_tokens: MAX_TOKENS,
-    }),
-  });
+  const models = MODELS[body.mode ?? 'chat'] ?? MODELS.chat;
+  let upstream: Response | null = null;
+  let detail = '';
+  for (const model of models) {
+    upstream = await fetch('https://api.mistral.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, stream: true, max_tokens: MAX_TOKENS }),
+    });
+    if (upstream.ok) break;
+    detail = await upstream.text();
+    console.error('Mistral', model, upstream.status, detail);
+    // Saturé ou indisponible pour ce plan : modèle suivant. Autre erreur : inutile d'insister.
+    if (![429, 503, 404].includes(upstream.status)) break;
+  }
 
-  if (!upstream.ok || !upstream.body) {
-    const detail = await upstream.text();
-    console.error('Mistral', upstream.status, detail);
-    return json(upstream.status === 429 ? 429 : 502, { error: 'upstream', status: upstream.status });
+  if (!upstream?.ok || !upstream.body) {
+    const status = upstream?.status ?? 502;
+    return json(status === 429 ? 429 : 502, {
+      error: 'upstream',
+      status,
+      detail: detail.slice(0, 500),
+    });
   }
 
   // Flux SSE de Mistral renvoyé tel quel au navigateur.

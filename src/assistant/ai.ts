@@ -25,7 +25,7 @@ export class AssistantError extends Error {
 
 export const ERROR_MESSAGES: Record<AssistantError['code'], string> = {
   'signed-out': 'Connectez-vous pour utiliser l’assistant.',
-  'rate-limit': 'Limite de l’offre gratuite atteinte. Réessayez dans une minute.',
+  'rate-limit': 'Mistral est saturé ou la limite gratuite est atteinte. Réessayez dans une minute.',
   network: 'Pas de réseau : l’assistant a besoin d’une connexion.',
   server: 'L’assistant n’a pas pu répondre. Réessayez dans un instant.',
 };
@@ -56,6 +56,10 @@ export async function* streamReply(
     if (signal.aborted) return;
     console.error(error);
     throw new AssistantError(navigator.onLine ? 'server' : 'network');
+  }
+  if (!response.ok) {
+    // Détail de Mistral dans la console, pour comprendre un refus.
+    console.error('Assistant', response.status, await response.clone().text());
   }
   if (response.status === 401) throw new AssistantError('signed-out');
   if (response.status === 429) throw new AssistantError('rate-limit');
