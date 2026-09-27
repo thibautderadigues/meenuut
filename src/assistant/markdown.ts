@@ -46,9 +46,24 @@ function preprocess(markdown: string): string {
           (_, before: string, latex: string) =>
             `${before}<span data-type="inline-math" data-latex="${escapeAttribute(latex)}"></span>`,
         )
-        .replace(/==(?=\S)([^=\n]+?)(?<=\S)==/g, '<mark>$1</mark>');
+        .replace(/==(?=\S)([^=\n]+?)(?<=\S)==/g, '<mark>$1</mark>')
+        // Bloc dépliable : son contenu est du Markdown, isolé par des lignes vides pour être lu
+        // comme tel (collé aux balises, il resterait du texte brut, voire disparaîtrait).
+        .replace(
+          /<details[^>]*>\s*<summary>([\s\S]*?)<\/summary>([\s\S]*?)<\/details>/gi,
+          (_, summary: string, body: string) =>
+            `\n\n<details><summary>${summary.trim()}</summary>\n\n${dedent(body).trim()}\n\n</details>\n\n`,
+        );
     })
     .join('');
+}
+
+/** Retire l'indentation commune (contenu d'un bloc dépliable indenté par l'IA). */
+function dedent(text: string): string {
+  const lines = text.split('\n');
+  const indents = lines.filter((line) => line.trim()).map((line) => /^[ \t]*/.exec(line)?.[0].length ?? 0);
+  const common = indents.length ? Math.min(...indents) : 0;
+  return lines.map((line) => line.slice(common)).join('\n');
 }
 
 /**
@@ -94,8 +109,15 @@ export function markdownToRichHtml(markdown: string): string {
     content.setAttribute('data-type', 'detailsContent');
     for (const child of Array.from(details.childNodes)) {
       if (child instanceof HTMLElement && child.tagName === 'SUMMARY') continue;
-      if (child.nodeType === Node.TEXT_NODE && !child.textContent?.trim()) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        // Texte resté hors paragraphe : on l'y met, sinon l'éditeur l'ignorerait.
+        const text = child.textContent?.trim();
         child.remove();
+        if (text) {
+          const paragraph = document.createElement('p');
+          paragraph.textContent = text;
+          content.append(paragraph);
+        }
         continue;
       }
       content.append(child);

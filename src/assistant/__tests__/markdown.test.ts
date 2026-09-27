@@ -39,3 +39,16 @@ test('surlignage et formules, mais pas les prix ni le code', () => {
   expect(find(doc.content![1]!, 'text')?.text).toBe('a == b');
   expect(doc.content?.[2]).toMatchObject({ type: 'blockMath', attrs: { latex: '\\frac{1}{2}' } });
 });
+
+test.each([
+  ['collé aux balises', '<details>\n<summary>Quand partir ?</summary>\nAu printemps, **hors saison**.\n- Avril\n- Mai\n</details>'],
+  ['indenté', '<details>\n  <summary>Quand partir ?</summary>\n  Au printemps, **hors saison**.\n\n  - Avril\n  - Mai\n</details>'],
+  ['sur une ligne', '<details><summary>Quand partir ?</summary>Au printemps, **hors saison**.\n- Avril\n- Mai</details>'],
+])('bloc dépliable rempli (%s)', (_, markdown) => {
+  const doc = markdownToContent(`Intro.\n${markdown}\n\nSuite.`);
+  const details = find(doc, 'details')!;
+  const content = details.content?.find((child) => child.type === 'detailsContent');
+  expect(find(details, 'detailsSummary')).toBeDefined();
+  expect(content?.content?.map((node) => node.type)).toEqual(['paragraph', 'bulletList']);
+  expect(find(content!, 'text')?.text).toBe('Au printemps, ');
+});
