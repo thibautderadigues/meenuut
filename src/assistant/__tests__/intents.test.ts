@@ -34,3 +34,17 @@ test.each(['Reformule ce passage', 'Raccourcis-le', 'Corrige les fautes', 'Tradu
   'réécrit : %s',
   (prompt) => expect(REWRITE_PATTERN.test(prompt)).toBe(true),
 );
+
+const { parseQuestions } = await import('../ai');
+
+test('questions à choix de l’IA', () => {
+  const parsed = parseQuestions(
+    ' {"questions":[{"question":"Quel ton ?","options":["Sérieux","Drôle"],"multiple":false},{"question":"Pour qui ?","options":["Moi","Mon équipe"],"multiple":true}]}',
+  );
+  expect(parsed).toEqual([
+    { question: 'Quel ton ?', options: ['Sérieux', 'Drôle'], multiple: false },
+    { question: 'Pour qui ?', options: ['Moi', 'Mon équipe'], multiple: true },
+  ]);
+  expect(parseQuestions('Sur quel sujet ?')).toBeNull();
+  expect(parseQuestions('{"questions": [oups')).toBeNull();
+});

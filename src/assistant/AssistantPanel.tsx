@@ -1,5 +1,5 @@
 import type { Editor } from '@tiptap/react';
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createDocumentWith, deleteDocument, latestDocumentId } from '../db/documents';
 import { plainText } from '../lib/sampleDocument';
 import { insertMarked } from '../editor/aiHighlight';
@@ -35,9 +35,12 @@ import {
   chatSystem,
   CREATE_PATTERN,
   CREATE_SYSTEM,
+  GENERAL_SYSTEM,
   ERROR_MESSAGES,
   REWRITE_PATTERN,
   QUESTION_PREFIX,
+  parseQuestions,
+  type AskQuestion,
   REWRITE_SYSTEM,
   WRITE_PATTERN,
   writeSystem,
@@ -50,6 +53,7 @@ import { markdownToContent, markdownToHtml, markdownToRichHtml } from './markdow
 import {
   clearSelectionContext,
   closeAssistant,
+  takePendingDraft,
   takePendingPrompt,
   setSelectionContext,
   useAssistant,
@@ -84,7 +88,16 @@ const fileSize = (bytes: number) =>
 type ProposalStatus = 'pending' | 'applied' | 'dismissed' | 'stale' | 'revised';
 
 type Message =
-  | { id: number; role: 'user'; text: string; quote: SelectionContext | null; files: Attachment[] }
+  | {
+      id: number;
+      role: 'user';
+      text: string;
+      quote: SelectionContext | null;
+      files: Attachment[];
+      /** Document ouvert au moment de la demande : la conversation est rattachée à lui. */
+      docId: string | null;
+      docTitle: string;
+    }
   | {
       id: number;
       role: 'assistant';
@@ -99,6 +112,9 @@ type Message =
       createdId?: string;
       error?: string;
       errorDetail?: string;
+      /** Questions à choix posées avant d'écrire, et la réponse donnée. */
+      questions?: AskQuestion[];
+      answered?: boolean;
       /** Question posée avant d'écrire : la réponse de la personne relance cette rédaction. */
       askedFor?: 'write' | 'create';
       /** Pendant la rédaction d'un document : avancement affiché à la place du texte. */
@@ -123,7 +139,9 @@ const quoted = (selection: SelectionContext | null | undefined) =>
 const SELECTION_SUGGESTIONS = ['Reformule ce passage', 'Raccourcis-le', 'Corrige les fautes', 'Explique-moi ce passage ?', 'Traduis en anglais'];
 /** Document vide ou presque : aider à démarrer. */
 const EMPTY_DOC_SUGGESTIONS = ['Propose un plan pour ce document', 'Écris une introduction', 'Crée un doc de liste de choses à faire'];
-const DOC_SUGGESTIONS = ['Résume ce document', 'Quels sont les points clés ?', 'Écris une conclusion', 'Relis et signale les fautes ?'];
+const DOC_SUGGESTIONS = ['Résume ce document', 'Quels sont les points clés ?', 'Continue le texte', 'Écris une conclusion', 'Relis et signale les fautes ?'];
+/** Sans document : conversation libre, ou nouveau document. */
+const FREE_SUGGESTIONS = ['Crée un document sur ', 'Explique-moi simplement… ?', 'Fais-moi un plan de révision pour… '];
 
 /** Dernier titre avant le curseur : la section où l'on se trouve. */
 function currentSection(editor: Editor): string {
@@ -158,6 +176,9 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const instructions = usePersonalInstructions();
+  // Document ouvert joint au contexte ; on peut le détacher pour parler d'autre chose.
+  const [withDocument, setWithDocument] = useState(true);
+  useEffect(() => setWithDocument(true), [docId]);
   const [showInstructions, setShowInstructions] = useState(false);
 
   // Un passage d'un autre document ne vaut plus comme contexte.
@@ -302,7 +323,13 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
         { role: 'user', content: `Consigne : ${prompt}\n\nPassage :\n${passage}` },
       ];
     } else {
-      const history = messages.slice(-HISTORY_LENGTH).flatMap((message): ChatMessage[] => {
+      // Seuls les échanges sur ce document : ceux d'un autre document brouilleraient le contexte.
+      let about: string | null = null;
+      const sameDoc = messages.filter((message) => {
+        if (message.role === 'user') about = message.docId;
+        return about === docId;
+      });
+      const history = sameDoc.slice(-HISTORY_LENGTH).flatMap((message): ChatMessage[] => {
         if (message.role === 'user') return [{ role: 'user', content: quoted(message.quote) + message.text }];
         const content = message.text || message.written || '';
         return content ? [{ role: 'assistant', content }] : [];
@@ -314,7 +341,9 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
           ? CREATE_SYSTEM
           : intent === 'write'
             ? writeSystem(docTitle, docMarkdown, section)
-            : chatSystem(docTitle, docMarkdown, section);
+            : withDocument
+              ? chatSystem(docTitle, docMarkdown, section)
+              : GENERAL_SYSTEM;
       request = [
         { role: 'system', content: withInstructions(system, instructions.text) },
         ...history,
@@ -329,6 +358,9 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     } else if (editor && intent === 'rewrite' && target) {
       beginSuggestion(editor, target.from, target.to, 'inline');
     }
+    // Sur téléphone, le panneau couvre le texte : on le ferme pour voir l'écriture en direct
+    // (Accepter / Refuser sont dans le texte).
+    if (inline && !window.matchMedia('(min-width: 640px)').matches) closeAssistant();
     const render = (markdown: string) =>
       inlineKind === 'inline'
         ? markdown.trim()
@@ -344,7 +376,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
           ? { ...message, status: 'revised' as const }
           : message,
       ),
-      { id: ++messageCount, role: 'user', text: prompt, quote: target, files },
+      { id: ++messageCount, role: 'user', text: prompt, quote: target, files, docId, docTitle },
       {
         id: answerId,
         role: 'assistant',
@@ -387,7 +419,8 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
           decide();
         }
         if (asking) {
-          updateMessage(answerId, { thinking: false, text: question() });
+          // Le JSON des questions ne s'affiche pas : on attend la fin pour montrer les choix.
+          updateMessage(answerId, { progress: 'Quelques questions pour bien viser…' });
           continue;
         }
         if (inline && editor) {
@@ -409,7 +442,8 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       }
       if (asking === null) decide();
       if (asking) {
-        updateMessage(answerId, { text: question() });
+        const questions = parseQuestions(question());
+        updateMessage(answerId, questions ? { questions, progress: undefined } : { text: question() });
       } else if (inline && editor) {
         if (written.trim()) writeSuggestion(editor, render(written));
         else if (intent !== 'revise') rejectSuggestion(editor);
@@ -543,13 +577,35 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
   sendRef.current = send;
   useEffect(() => {
     if (!open) return;
+    const draftRequest = takePendingDraft();
+    if (draftRequest) {
+      setDraft(draftRequest.text);
+      if (draftRequest.detached) setWithDocument(false);
+      // Curseur en fin de texte, prêt à compléter « Crée un document sur … ».
+      requestAnimationFrame(() => {
+        const input = inputRef.current;
+        input?.focus();
+        input?.setSelectionRange(input.value.length, input.value.length);
+      });
+    }
     const prompt = takePendingPrompt();
     if (prompt) void sendRef.current(prompt);
   }, [open, focusRequest]);
 
   const onPanelKeyDown = (event: KeyboardEvent) => {
+    // ⌘↵ depuis le panneau : accepter la suggestion en attente dans le document.
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && editor && getPending(editor.state)) {
+      event.preventDefault();
+      acceptSuggestion(editor);
+      return;
+    }
     if (event.key !== 'Escape') return;
     event.stopPropagation();
+    // Échap arrête d'abord une réponse en cours, puis ferme le panneau.
+    if (streaming) {
+      stop();
+      return;
+    }
     closeAssistant();
     editor?.commands.focus();
   };
@@ -557,7 +613,9 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
   const words = (editor?.storage.characterCount?.words() as number | undefined) ?? 0;
   const suggestions = selection
     ? SELECTION_SUGGESTIONS
-    : words < 30
+    : !withDocument
+      ? FREE_SUGGESTIONS
+      : words < 30
       ? EMPTY_DOC_SUGGESTIONS
       : DOC_SUGGESTIONS;
 
@@ -609,6 +667,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
             onClick={() => {
               stop();
               setMessages([]);
+              setWithDocument(true);
               inputRef.current?.focus();
             }}
           >
@@ -678,8 +737,20 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
           </div>
         ) : (
           <ol className="flex flex-col gap-5 pt-2">
-            {messages.map((message) =>
+            {messages.map((message, index) =>
               message.role === 'user' ? (
+                <Fragment key={message.id}>
+                {(() => {
+                  // Changement de document entre deux demandes : repère discret.
+                  const previous = messages.slice(0, index).reverse().find((item) => item.role === 'user');
+                  return previous && previous.role === 'user' && previous.docId !== message.docId ? (
+                    <li aria-hidden className="flex items-center gap-2 text-[11px] text-ink-faint">
+                      <span className="h-px flex-1 bg-rule" />
+                      <span className="max-w-[70%] truncate">{message.docTitle.trim() || 'Sans titre'}</span>
+                      <span className="h-px flex-1 bg-rule" />
+                    </li>
+                  ) : null;
+                })()}
                 <li
                   key={message.id}
                   className="animate-fade-in rounded-xl border border-rule bg-canvas p-2"
@@ -705,6 +776,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                     {message.text}
                   </p>
                 </li>
+                </Fragment>
               ) : (
                 <li key={message.id} className="group animate-fade-in px-1">
                   {message.thinking ? (
@@ -731,6 +803,17 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                         </button>
                       )}
                     </p>
+                  )}
+                  {message.questions && (
+                    <QuestionsCard
+                      questions={message.questions}
+                      answered={Boolean(message.answered) || message.id !== messages.at(-1)?.id}
+                      disabled={streaming}
+                      onSubmit={(answer) => {
+                        updateMessage(message.id, { answered: true });
+                        void send(answer);
+                      }}
+                    />
                   )}
                   {message.errorDetail && (
                     <p className="mt-1 font-mono text-[10px] break-all text-ink-faint select-text">
@@ -808,10 +891,31 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       <div className="shrink-0 p-3 pt-0">
         <div className="rounded-xl border border-rule-strong bg-canvas transition-shadow duration-100 focus-within:border-ink-faint/60">
           <div className="flex flex-wrap gap-1 px-2.5 pt-2">
-            <span className="flex max-w-full items-center gap-1 rounded-md bg-surface px-1.5 py-0.5 text-[11px] text-ink-muted">
-              <FileIcon />
-              <span className="truncate">{docTitle.trim() || 'Sans titre'}</span>
-            </span>
+            {withDocument ? (
+              <span className="flex max-w-full items-center gap-1 rounded-md bg-surface py-0.5 pr-0.5 pl-1.5 text-[11px] text-ink-muted">
+                <FileIcon />
+                <span className="truncate">{docTitle.trim() || 'Sans titre'}</span>
+                <button
+                  type="button"
+                  aria-label="Parler sans ce document"
+                  data-tooltip="Parler sans ce document"
+                  onClick={() => setWithDocument(false)}
+                  className="grid size-4 shrink-0 place-items-center rounded hover:bg-rule [&_svg]:size-3"
+                >
+                  <CloseIcon />
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setWithDocument(true)}
+                data-tooltip="Joindre le document ouvert"
+                className="flex items-center gap-1 rounded-md border border-dashed border-rule-strong px-1.5 py-0.5 text-[11px] text-ink-faint hover:text-ink"
+              >
+                <PlusIcon />
+                Document
+              </button>
+            )}
             {files.map((file) => (
               <FileChip
                 key={file.id}
@@ -1237,6 +1341,134 @@ function ResizeHandle() {
       className="group absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize max-sm:hidden"
     >
       <div className="mx-auto h-full w-px bg-transparent transition-colors duration-100 group-hover:bg-ink-faint/50 group-active:bg-ai/60" />
+    </div>
+  );
+}
+
+interface QuestionsCardProps {
+  questions: AskQuestion[];
+  /** Déjà répondu (ou conversation passée à autre chose) : lecture seule. */
+  answered: boolean;
+  disabled: boolean;
+  onSubmit: (answer: string) => void;
+}
+
+/**
+ * Questions à choix de l'IA, comme dans Claude : on coche une option (ou plusieurs),
+ * « Autre » permet de répondre librement, « Envoyer » transmet le tout.
+ */
+function QuestionsCard({ questions, answered, disabled, onSubmit }: QuestionsCardProps) {
+  const [chosen, setChosen] = useState<string[][]>(() => questions.map(() => []));
+  const [other, setOther] = useState<string[]>(() => questions.map(() => ''));
+  const [otherOn, setOtherOn] = useState<boolean[]>(() => questions.map(() => false));
+
+  const answerFor = (index: number) => {
+    const picks = [...(chosen[index] ?? [])];
+    const free = other[index]?.trim();
+    if (otherOn[index] && free) picks.push(free);
+    return picks;
+  };
+  const complete = questions.every((_, index) => answerFor(index).length > 0);
+  const locked = answered || disabled;
+
+  const toggle = (index: number, option: string, multiple: boolean) => {
+    setChosen((all) =>
+      all.map((picks, i) => {
+        if (i !== index) return picks;
+        if (!multiple) return [option];
+        return picks.includes(option) ? picks.filter((pick) => pick !== option) : [...picks, option];
+      }),
+    );
+    if (!multiple) setOtherOn((all) => all.map((on, i) => (i === index ? false : on)));
+  };
+
+  const submit = () => {
+    if (!complete || locked) return;
+    const lines = questions.map((item, index) => `- ${item.question} → ${answerFor(index).join(', ')}`);
+    onSubmit(`Mes réponses :\n${lines.join('\n')}`);
+  };
+
+  return (
+    <div className={`mt-2 space-y-3 rounded-xl border border-rule-strong bg-canvas p-3 ${locked ? 'opacity-60' : ''}`}>
+      {questions.map((item, index) => (
+        <fieldset key={item.question} disabled={locked} className="space-y-1">
+          <legend className="mb-1.5 text-[13px] font-medium text-ink">{item.question}</legend>
+          {item.options.map((option) => {
+            const selected = chosen[index]?.includes(option) ?? false;
+            return (
+              <label
+                key={option}
+                className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-1.5 text-[13px] transition-colors duration-100 ${
+                  selected ? 'border-ai/50 bg-ai-soft text-ink' : 'border-rule text-ink-muted hover:border-rule-strong hover:text-ink'
+                }`}
+              >
+                <input
+                  type={item.multiple ? 'checkbox' : 'radio'}
+                  name={`question-${index}`}
+                  checked={selected}
+                  onChange={() => toggle(index, option, item.multiple)}
+                  className="size-3.5 shrink-0 accent-[var(--ai)]"
+                />
+                {option}
+              </label>
+            );
+          })}
+          <label
+            className={`flex items-center gap-2.5 rounded-lg border px-2.5 py-1 text-[13px] transition-colors duration-100 ${
+              otherOn[index] ? 'border-ai/50 bg-ai-soft' : 'border-rule hover:border-rule-strong'
+            }`}
+          >
+            <input
+              type={item.multiple ? 'checkbox' : 'radio'}
+              name={`question-${index}`}
+              checked={otherOn[index] ?? false}
+              onChange={() => {
+                setOtherOn((all) => all.map((on, i) => (i === index ? (item.multiple ? !on : true) : on)));
+                if (!item.multiple) setChosen((all) => all.map((picks, i) => (i === index ? [] : picks)));
+              }}
+              className="size-3.5 shrink-0 accent-[var(--ai)]"
+            />
+            <input
+              type="text"
+              value={other[index] ?? ''}
+              placeholder="Autre…"
+              aria-label={`Autre réponse : ${item.question}`}
+              onFocus={() => {
+                setOtherOn((all) => all.map((on, i) => (i === index ? true : on)));
+                if (!item.multiple) setChosen((all) => all.map((picks, i) => (i === index ? [] : picks)));
+              }}
+              onChange={(event) => setOther((all) => all.map((text, i) => (i === index ? event.target.value : text)))}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  submit();
+                }
+              }}
+              className="min-w-0 flex-1 bg-transparent py-0.5 text-base text-ink outline-none placeholder:text-ink-faint sm:text-[13px]"
+            />
+          </label>
+        </fieldset>
+      ))}
+      {!answered && (
+        <div className="flex items-center justify-end gap-2 pt-0.5">
+          <button
+            type="button"
+            disabled={locked}
+            onClick={() => onSubmit('Fais au mieux, choisis pour moi.')}
+            className="rounded-md px-2 py-1 text-xs text-ink-muted hover:bg-surface hover:text-ink"
+          >
+            Choisis pour moi
+          </button>
+          <button
+            type="button"
+            disabled={!complete || locked}
+            onClick={submit}
+            className="rounded-md bg-ink px-3 py-1 text-xs font-medium text-canvas transition-opacity hover:opacity-90 disabled:opacity-30"
+          >
+            Envoyer
+          </button>
+        </div>
+      )}
     </div>
   );
 }

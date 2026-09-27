@@ -21,6 +21,9 @@ import {
   TrashIcon,
 } from '../ui/icons';
 import { fuzzyMatch } from './fuzzy';
+import { AssistantIcon } from '../assistant/AssistantIcon';
+import { ASSISTANT_NAME } from '../assistant/provider';
+import { openAssistant } from '../assistant/store';
 
 export interface Command {
   id: string;
@@ -70,6 +73,24 @@ export function buildCommands(ctx: PaletteContext): Command[] {
       icon: PlusIcon,
       hint: keys('alt', 'mod', 'N'),
       run: ctx.createDocument,
+    },
+    {
+      id: 'assistant',
+      group: 'Actions',
+      label: `Demander à ${ASSISTANT_NAME}`,
+      keywords: ['ia', 'ai', 'assistant', 'mistral', 'question', 'aide'],
+      icon: AssistantIcon,
+      hint: keys('alt', 'Espace'),
+      run: () => openAssistant(),
+    },
+    {
+      id: 'assistant-new-doc',
+      group: 'Actions',
+      label: `Nouveau document avec ${ASSISTANT_NAME}…`,
+      keywords: ['ia', 'ai', 'mistral', 'créer', 'rédiger', 'résumé', 'générer'],
+      icon: AssistantIcon,
+      // Sans lien avec le document ouvert : on part d'une page blanche.
+      run: () => openAssistant(null, null, { text: 'Crée un document sur ', detached: true }),
     },
     {
       id: 'sample',

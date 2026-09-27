@@ -129,7 +129,11 @@ const RICH_FORMATS = `Quand tu écris dans un document, tu peux utiliser, en plu
 /** Préfixe d'une réponse qui demande une précision au lieu d'écrire. */
 export const QUESTION_PREFIX = 'QUESTION:';
 
-const ASK_FIRST = `Si la demande est trop vague pour écrire quelque chose de vraiment utile (sujet, but ou destinataire impossibles à deviner, même avec le document), n’écris rien : réponds uniquement par « ${QUESTION_PREFIX} » suivi d’une ou deux questions courtes pour préciser. Si tu peux raisonnablement deviner, écris directement, sans poser de question.`;
+const ASK_FIRST = `Si la demande est trop vague pour écrire quelque chose de vraiment utile (sujet, but ou destinataire impossibles à deviner, même avec le document), n’écris rien et pose des questions à choix. Réponds alors uniquement par « ${QUESTION_PREFIX} » suivi d’un objet JSON, sans rien d’autre :
+{"questions":[{"question":"Quel ton ?","options":["Sérieux","Décontracté","Humoristique"],"multiple":false}]}
+- 1 à 3 questions courtes, 2 à 4 options courtes chacune (ne propose pas « Autre » : la personne peut toujours répondre librement) ;
+- "multiple": true si plusieurs réponses peuvent se cumuler.
+Si tu peux raisonnablement deviner, écris directement, sans poser de question.`;
 
 export const REWRITE_SYSTEM = `Tu réécris un extrait de document selon la consigne donnée.
 
@@ -152,6 +156,9 @@ On te demande de rédiger un nouveau document. Réponds uniquement par le docume
 ${RICH_FORMATS}
 
 ${ASK_FIRST}`;
+
+/** Conversation sans lien avec un document (contexte détaché). */
+export const GENERAL_SYSTEM = BASE;
 
 /** Contexte du document ouvert, sans les images (inutiles et coûteuses). */
 export function chatSystem(docTitle: string, docMarkdown: string, section = ''): string {
@@ -183,7 +190,7 @@ ${ASK_FIRST}`;
 export const REWRITE_PATTERN =
   /reformul|réécri|raccourc|plus court|corrig|faute|orthographe|simplifi|tradui|anglais|english|améliore|allonge|développe/i;
 export const WRITE_PATTERN =
-  /^(écris|ecris|rédige|redige|ajoute|génère|genere|propose|fais)(-moi|\s+moi)?\s+(un|une|des|la|le|l’|l')?\s*(\S+\s+)?(paragraphe|phrase|intro|introduction|conclusion|texte|liste|tableau|section|partie|plan|exemple)/i;
+  /^(continue|poursuis|termine)\b|^(écris|ecris|rédige|redige|ajoute|génère|genere|propose|fais)(-moi|\s+moi)?\s+(un|une|des|la|le|l’|l')?\s*(\S+\s+)?(paragraphe|phrase|intro|introduction|conclusion|texte|liste|tableau|section|partie|plan|exemple)/i;
 /**
  * « Crée un doc… », « crée-moi vite fait un document… », « fais-moi une fiche… », « nouveau document… ».
  * Pas « ajoute une note à ce document » (c'est une écriture dans le document ouvert).
@@ -196,4 +203,33 @@ export function splitTitle(markdown: string): { title: string; body: string } {
   const match = /^\s*#\s+(.+)\n?/.exec(markdown);
   if (!match) return { title: 'Nouveau document', body: markdown };
   return { title: (match[1] ?? '').trim(), body: markdown.slice(match[0].length) };
+}
+
+/** Question à choix posée par l'IA avant d'écrire. */
+export interface AskQuestion {
+  question: string;
+  options: string[];
+  multiple: boolean;
+}
+
+/** « QUESTION: {…} » → questions à choix ; texte libre si le JSON est absent ou invalide. */
+export function parseQuestions(text: string): AskQuestion[] | null {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    const data = JSON.parse(text.slice(start, end + 1)) as { questions?: unknown };
+    if (!Array.isArray(data.questions)) return null;
+    const questions = data.questions
+      .map((item: { question?: unknown; options?: unknown; multiple?: unknown }) => ({
+        question: String(item?.question ?? '').trim(),
+        options: Array.isArray(item?.options) ? item.options.map(String).filter(Boolean).slice(0, 6) : [],
+        multiple: item?.multiple === true,
+      }))
+      .filter((item) => item.question)
+      .slice(0, 4);
+    return questions.length ? questions : null;
+  } catch {
+    return null;
+  }
 }
