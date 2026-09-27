@@ -41,6 +41,12 @@ export type Outcome = 'accepted' | 'rejected';
 
 const key = new PluginKey<Pending[]>('aiSuggestion');
 const settledListeners = new Set<(id: number, outcome: Outcome) => void>();
+/** « Préciser » : ouvre la discussion sur une modification (fourni par le panneau). */
+let refineHandler: ((id: number) => void) | null = null;
+
+export function setRefineHandler(handler: ((id: number) => void) | null) {
+  refineHandler = handler;
+}
 let nextId = 1;
 
 /** Prévenu quand une suggestion est acceptée ou refusée (depuis le texte ou le panneau). */
@@ -217,6 +223,7 @@ function controls(editor: Editor, id: number, deleting: boolean, placement: 'blo
     return node;
   };
   bar.append(
+    button('Préciser', 'Dire à l’assistant ce qu’il faut changer', 'ai-hunk-refine', () => refineHandler?.(id)),
     button('Refuser', 'Refuser cette modification', 'ai-hunk-reject', () => rejectSuggestion(editor, id)),
     button(deleting ? 'Supprimer' : 'Accepter', 'Accepter cette modification', 'ai-hunk-accept', () =>
       acceptSuggestion(editor, id),

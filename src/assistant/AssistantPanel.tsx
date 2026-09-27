@@ -16,6 +16,7 @@ import {
   rejectAll,
   resumeWriting,
   revealSuggestion,
+  setRefineHandler,
   rejectSuggestion,
   writeSuggestion,
 } from '../editor/aiSuggestion';
@@ -63,6 +64,7 @@ import { markdownInlineToHtml, markdownToContent, markdownToHtml, markdownToRich
 import {
   clearSelectionContext,
   closeAssistant,
+  openAssistant,
   takePendingDraft,
   takePendingPrompt,
   setSelectionContext,
@@ -189,6 +191,15 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const instructions = usePersonalInstructions();
+  // « Préciser » sur une modification du document : la prochaine consigne la réécrit, elle.
+  const [refineTarget, setRefineTarget] = useState<number | null>(null);
+  useEffect(() => {
+    setRefineHandler((id) => {
+      setRefineTarget(id);
+      openAssistant();
+    });
+    return () => setRefineHandler(null);
+  }, []);
   // Document vide ou non, suivi en direct (le panneau ne se redessine pas à chaque frappe).
   const [editorEmpty, setEditorEmpty] = useState(() => editor?.isEmpty ?? true);
   useEffect(() => {
@@ -362,7 +373,11 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     stickToBottom.current = true;
 
     const target = options.quote !== undefined ? options.quote : selection;
-    const pending = editor ? getPending(editor.state) : null;
+    // Modification visée par « Préciser », sinon la plus récente.
+    const pending = editor
+      ? ((refineTarget !== null ? getPending(editor.state, refineTarget) : null) ?? getPending(editor.state))
+      : null;
+    setRefineTarget(null);
     // Deux cas se décident sans l'IA : réécrire l'extrait sélectionné (« reformule »…),
     // ou retoucher la suggestion en attente (« plus court »…). Pour tout le reste, c'est
     // l'IA qui choisit : répondre, modifier le document, écrire, créer ou demander.
@@ -455,11 +470,12 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     }
     // Suivre l'écriture dans le document, sauf si l'on fait défiler soi-même.
     let follow = true;
-    const stopFollowing = () => {
-      follow = false;
+    // Seul un défilement du document compte, pas celui de la conversation.
+    const stopFollowing = (event: Event) => {
+      if (!(event.target instanceof Element && event.target.closest('[data-assistant]'))) follow = false;
     };
-    window.addEventListener('wheel', stopFollowing, { passive: true, once: true });
-    window.addEventListener('touchmove', stopFollowing, { passive: true, once: true });
+    window.addEventListener('wheel', stopFollowing, { passive: true });
+    window.addEventListener('touchmove', stopFollowing, { passive: true });
     if (editor && suggestion) revealSuggestion(editor, suggestion.id);
     if (suggestion) {
       updateMessage(answerId, {
@@ -480,11 +496,22 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
 
     // L'IA a choisi d'écrire au curseur : on ouvre la suggestion à cet endroit.
     const startWriting = () => {
-      if (!editor || !writeRange) return;
+      if (!editor || !writeRange || suggestion) return;
       suggestion = { id: beginSuggestion(editor, writeRange.from, writeRange.to, 'block', true), kind: 'block' };
       revealSuggestion(editor, suggestion.id);
       updateMessage(answerId, { proposal: { kind: 'inline', mode: 'write' }, suggestionIds: [suggestion.id] });
       if (small) closeAssistant();
+    };
+
+    // Demande d'écriture évidente : le curseur apparaît tout de suite à l'endroit prévu,
+    // pendant que l'IA réfléchit. Il est retiré si elle choisit finalement autre chose.
+    const anchored = mode === 'agent' && hint === 'write' && Boolean(writeRange);
+    if (anchored) startWriting();
+    const dropAnchor = () => {
+      if (!anchored || !editor || !suggestion) return;
+      rejectSuggestion(editor, suggestion.id);
+      suggestion = null;
+      updateMessage(answerId, { proposal: undefined, suggestionIds: [] });
     };
 
     try {
@@ -493,6 +520,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
         if (action === null) {
           action = detectAction(written, hint);
           if (action === null) continue;
+          if (action !== 'write') dropAnchor();
           if (action === 'write') {
             if (writeRange) startWriting();
             else action = 'answer';
@@ -519,6 +547,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
         }
       }
       if (action === null) action = written.trim() ? 'answer' : null;
+      if (action === null) dropAnchor();
       // Filet : un document complet renvoyé comme simple réponse alors qu'on demandait de le créer.
       if (action === 'answer' && hint === 'create' && /^\s*#\s/.test(unwrapFence(written)) && written.length > 200) {
         action = 'create';
@@ -582,6 +611,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       }
     } catch (error) {
       if (editor && suggestion && mode === 'rewrite' && !written.trim()) rejectSuggestion(editor, suggestion.id);
+      if (!written.trim()) dropAnchor();
       if (!controller.signal.aborted) {
         updateMessage(answerId, {
           error: ERROR_MESSAGES[error instanceof AssistantError ? error.code : 'server'],
@@ -1157,7 +1187,9 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
               rows={1}
               value={draft}
               placeholder={
-                selection
+                refineTarget !== null
+                  ? 'Que faut-il changer dans cette modification ?'
+                  : selection
                   ? 'Que faire de ce passage ?'
                   : documentEmpty && withDocument
                     ? 'Que doit contenir ce document ?'

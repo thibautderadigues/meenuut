@@ -120,3 +120,11 @@ test.each(['rajoute un paragraphe', 'Ajouter une phrase de conclusion', 'Insère
   'écriture : %s',
   (prompt) => expect(actionHint(prompt, true)).toBe('write'),
 );
+
+const { cleanWritten } = await import('../ai');
+
+test('restes d’indications recopiés par le modèle', () => {
+  expect(cleanWritten('e)\nPour les utilisateurs avancés…\n\n(fin du document)')).toBe('Pour les utilisateurs avancés…');
+  expect(cleanWritten('(après le passage « Intro »)\nTexte.')).toBe('Texte.');
+  expect(cleanWritten('Un texte (normal) reste intact.')).toBe('Un texte (normal) reste intact.');
+});

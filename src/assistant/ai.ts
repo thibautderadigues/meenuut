@@ -159,6 +159,16 @@ function documentContext(docTitle: string, docMarkdown: string): string {
   return `Document ouvert : « ${docTitle || 'Sans titre'} ».\n<document>\n${body}\n</document>`;
 }
 
+/** Où WRITE écrira, en une phrase (sans balise que l'IA pourrait recopier). */
+function placementText(context: AgentContext): string {
+  const before = context.before.split('\n').filter(Boolean).at(-1)?.slice(-160) ?? '';
+  const after = context.after.split('\n').filter(Boolean)[0]?.slice(0, 120) ?? '';
+  if (!before && !after) return 'le document est vide';
+  if (!after) return `à la fin du document, après le passage qui se termine par « ${before} »`;
+  if (!before) return `au début du document, avant « ${after} »`;
+  return `après le passage qui se termine par « ${before} », et avant « ${after} »`;
+}
+
 export interface AgentContext {
   docTitle: string;
   docMarkdown: string;
@@ -210,7 +220,7 @@ nouveau texte
    - Le nouveau texte peut contenir du Markdown (gras, listes, blocs Meenuut) ; laisse-le vide pour supprimer le passage.
    - Pour ajouter sans rien changer : recopie le passage dans AVANT, puis dans le nouveau texte le même passage suivi du paragraphe ajouté.
    - Autant de blocs que nécessaire pour tout faire ; ne touche pas au reste.
-3. WRITE: — écrire un nouveau passage à l’emplacement du curseur, entre « ${context.before || '(début du document)'} » et « ${context.after || '(fin du document)'} ». Puis le passage en Markdown, qui s’intègre dans la suite logique de ce qui précède, sans le répéter, dans le ton du document.
+3. WRITE: — écrire un nouveau passage à un endroit précis du document (${placementText(context)}). Puis le passage en Markdown, seul : il s’intègre dans la suite logique de ce qui précède, sans le répéter, dans le ton du document. N’écris rien d’autre (ni indication d’emplacement, ni commentaire). Si le document décrit quelque chose de précis (un produit, un projet, un voyage…), n’invente ni fonctionnalités, ni faits, ni chiffres qu’il ne mentionne pas : appuie-toi sur ce qu’il dit.
 4. ${CREATE_RULE}
 5. ${QUESTION_RULE}
 
@@ -280,14 +290,28 @@ export function detectAction(text: string, hint: ReturnType<typeof actionHint> =
 
 /** Retire la phrase d'accompagnement qu'un modèle ajoute parfois après un document. */
 export function stripChatter(markdown: string): string {
-  return markdown
+  return cleanWritten(markdown)
     .replace(/\n+(---\s*\n+)?[^\n]*(copier|copie-le|adapter|dis-le-moi|n’hésite|n'hésite)[^\n]*\s*$/i, '')
     .trim();
 }
 
 /** Le contenu après le préfixe d'action, sans l'éventuel bloc de code qui l'entoure. */
 export function stripAction(text: string): string {
-  return unwrapFence(text.trimStart().replace(/^[*_`#\s]*(EDITS|WRITE|CREATE|QUESTION):[*_`]*\s*/i, ''));
+  return cleanWritten(
+    unwrapFence(text.trimStart().replace(/^[*_`#\s]*(EDITS|WRITE|CREATE|QUESTION):[*_`]*\s*/i, '')),
+  );
+}
+
+/**
+ * Restes d'indications que le modèle recopie parfois autour d'un passage :
+ * « (fin du document) », « (début du document) », « e) » ou « (après … ») » en tête.
+ */
+export function cleanWritten(text: string): string {
+  return text
+    .replace(/^\s*\((début|fin|après|avant|emplacement)[^)\n]{0,160}\)\s*\n?/i, '')
+    .replace(/^\s*[a-zé]{0,3}\)\s*\n/i, '')
+    .replace(/\n?\s*\((début|fin) du document\)\s*$/i, '')
+    .replace(/\n?\s*\((début|fin) du document\)/gi, '');
 }
 
 /**

@@ -1215,6 +1215,15 @@
     color 100ms ease;
 }
 
+.tiptap .ai-hunk-refine {
+  color: var(--ink-muted);
+}
+
+.tiptap .ai-hunk-refine:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+
 .tiptap .ai-hunk-reject {
   color: var(--ink-muted);
 }
