@@ -789,7 +789,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                         onClick={() => void navigator.clipboard?.writeText(message.text)}
                       />
                       <SmallAction
-                        label="Insérer dans le document"
+                        label="Insérer"
                         icon={<PlusIcon />}
                         onClick={() => editor && insertMarked(editor, markdownToRichHtml(message.text))}
                       />

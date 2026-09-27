@@ -184,7 +184,12 @@ export const REWRITE_PATTERN =
   /reformul|réécri|raccourc|plus court|corrig|faute|orthographe|simplifi|tradui|anglais|english|améliore|allonge|développe/i;
 export const WRITE_PATTERN =
   /^(écris|ecris|rédige|redige|ajoute|génère|genere|propose|fais)(-moi|\s+moi)?\s+(un|une|des|la|le|l’|l')?\s*(\S+\s+)?(paragraphe|phrase|intro|introduction|conclusion|texte|liste|tableau|section|partie|plan|exemple)/i;
-export const CREATE_PATTERN = /\b(cré|rédige|écris)\w*\s+(moi\s+)?(un|une)\s+(nouveau\s+)?(doc|document|note|page)/i;
+/**
+ * « Crée un doc… », « crée-moi vite fait un document… », « fais-moi une fiche… », « nouveau document… ».
+ * Pas « ajoute une note à ce document » (c'est une écriture dans le document ouvert).
+ */
+export const CREATE_PATTERN =
+  /(^|\s)(cré\w*|crée\w*|nouveau|nouvelle|(rédige|écris|ecris|fais|génère|genere|prépare|prepare)(-moi|\s+moi)?\s+(un|une))\b[^.?!]{0,40}?\b(doc|docs|document|fiche|page|note)\b(?!\s*(ouvert|actuel))/i;
 
 /** « # Titre » en tête → titre du document, le reste → contenu. */
 export function splitTitle(markdown: string): { title: string; body: string } {
