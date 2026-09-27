@@ -1,8 +1,17 @@
+import { useSyncStatus, type SyncStatus } from '../sync/sync';
 import { signOut, useUser } from './AuthGate';
 
-/** Bas de la sidebar : compte connecté et déconnexion. */
+const LABELS: Record<SyncStatus, string> = {
+  synced: 'Synchronisé',
+  pending: 'Synchronisation…',
+  offline: 'Hors ligne · enregistré sur cet appareil',
+  error: 'Synchronisation en échec · nouvel essai bientôt',
+};
+
+/** Bas de la sidebar : compte connecté, état de la synchro, déconnexion. */
 export function AccountFooter() {
   const user = useUser();
+  const status = useSyncStatus();
   if (!user) return null;
 
   return (
@@ -19,6 +28,22 @@ export function AccountFooter() {
           Déconnexion
         </button>
       </div>
+      <p
+        role="status"
+        className={`mt-1 flex items-center gap-1.5 ${status === 'error' ? 'text-danger' : 'text-ink-faint'}`}
+      >
+        <span
+          aria-hidden
+          className={`size-1.5 rounded-full ${
+            status === 'synced'
+              ? 'bg-[var(--tx-green)]'
+              : status === 'error'
+                ? 'bg-danger'
+                : 'bg-ink-faint'
+          }`}
+        />
+        {LABELS[status]}
+      </p>
     </div>
   );
 }

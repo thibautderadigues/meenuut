@@ -1,10 +1,11 @@
 import { useEditorState, type Editor } from '@tiptap/react';
+import { useEffect, useState } from 'react';
 import type { SaveStatus } from '../lib/useAutosave';
-import { useSyncStatus, type SyncStatus } from '../sync/sync';
 
 interface StatusBarProps {
   editor: Editor;
   status: SaveStatus;
+  savedAt: number;
   /** Mode focus : tout disparaît, sauf une erreur d'enregistrement. */
   hidden: boolean;
   onRetry: () => void;
@@ -15,29 +16,12 @@ const WORDS_PER_MINUTE = 230;
 
 const countWords = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
-type Indicator = { label: string; dot: string; pulse?: boolean };
-
-/** Enregistrement local (IndexedDB) puis envoi en ligne : un seul état pour l'utilisateur. */
-function indicator(status: SaveStatus, sync: SyncStatus): Indicator {
-  if (status === 'dirty') return { label: 'Non enregistré', dot: 'bg-ink-faint' };
-  if (status === 'saving' || sync === 'pending') {
-    return { label: 'Enregistrement…', dot: 'bg-accent', pulse: true };
-  }
-  if (sync === 'offline') {
-    return { label: 'Hors ligne · enregistré sur cet appareil', dot: 'bg-[var(--tx-orange)]' };
-  }
-  if (sync === 'error') {
-    return { label: 'Pas encore en ligne · nouvel essai…', dot: 'bg-[var(--tx-orange)]' };
-  }
-  return { label: 'Enregistré', dot: 'bg-[var(--tx-green)]' };
-}
-
 /**
  * Compteur discret (mots, caractères, temps de lecture ; sur la sélection s'il y en a une)
- * et indicateur de sauvegarde, toujours visible : non enregistré, en cours, enregistré en ligne.
+ * et indicateur de sauvegarde : "Enregistré" apparaît brièvement puis s'efface.
  */
-export function StatusBar({ editor, status, hidden, onRetry }: StatusBarProps) {
-  const sync = useSyncStatus();
+export function StatusBar({ editor, status, savedAt, hidden, onRetry }: StatusBarProps) {
+  const [justSaved, setJustSaved] = useState(false);
 
   const counts = useEditorState({
     editor,
@@ -52,6 +36,13 @@ export function StatusBar({ editor, status, hidden, onRetry }: StatusBarProps) {
       };
     },
   });
+
+  useEffect(() => {
+    if (status !== 'saved') return;
+    setJustSaved(true);
+    const timeout = window.setTimeout(() => setJustSaved(false), 1600);
+    return () => window.clearTimeout(timeout);
+  }, [status, savedAt]);
 
   if (status === 'error') {
     return (
@@ -72,7 +63,7 @@ export function StatusBar({ editor, status, hidden, onRetry }: StatusBarProps) {
     );
   }
 
-  const save = indicator(status, sync);
+  const saveVisible = status === 'saving' || (status === 'saved' && justSaved);
   const selection = counts.selectedCharacters > 0;
   const minutes = Math.max(1, Math.round(counts.words / WORDS_PER_MINUTE));
   const plural = (n: number, word: string) => `${number.format(n)} ${word}${n > 1 ? 's' : ''}`;
@@ -84,12 +75,11 @@ export function StatusBar({ editor, status, hidden, onRetry }: StatusBarProps) {
         hidden ? 'opacity-0' : ''
       }`}
     >
-      <span role="status" className="flex items-center gap-1.5 text-ink-muted">
-        <span
-          aria-hidden
-          className={`size-1.5 rounded-full ${save.dot} ${save.pulse ? 'animate-pulse' : ''}`}
-        />
-        {save.label}
+      <span
+        aria-hidden
+        className={`text-ink-muted transition-opacity duration-150 ${saveVisible ? 'opacity-100' : 'opacity-0'}`}
+      >
+        {status === 'saving' ? 'Enregistrement…' : 'Enregistré'}
       </span>
       <span>
         {selection
