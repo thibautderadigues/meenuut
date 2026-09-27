@@ -10,6 +10,7 @@ import { AssistantButton } from '../assistant/AssistantButton';
 import { useAssistant } from '../assistant/store';
 import { SyncIndicator } from '../sync/SyncIndicator';
 import { BubbleToolbar } from './BubbleToolbar';
+import { SuggestionReviewBar } from './SuggestionReviewBar';
 import { TablePickerHost } from './TablePicker';
 import { BlockHandle } from './BlockHandle';
 import { createExtensions, type MathTarget } from './extensions';
@@ -187,6 +188,7 @@ export function Editor({ doc, title, focusMode, onEditor }: EditorProps) {
       <BubbleToolbar editor={editor} docId={id} linkRequest={linkRequest} />
       <FloatingBlockMenu editor={editor} />
       <TablePickerHost editor={editor} />
+      <SuggestionReviewBar editor={editor} />
       <StatusBar
         editor={editor}
         status={status}

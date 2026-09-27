@@ -301,6 +301,23 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     return { from: after, to: after };
   };
 
+  /** « En bas », « à la fin », « au début »… : l'endroit demandé prime sur le curseur. */
+  const requestedRange = (ed: Editor, prompt: string) => {
+    const { doc } = ed.state;
+    if (/(^|[\s,;:(])(tout en bas|en bas|à la fin|a la fin|en fin de|en dernier|fin du (doc|document|texte)|dernier paragraphe)(?=$|[\s,.;:!?)])/i.test(prompt)) {
+      // Une ligne vide en fin de document est remplacée plutôt que laissée au-dessus.
+      const last = doc.lastChild;
+      if (last?.isTextblock && last.content.size === 0) {
+        return { from: doc.content.size - last.nodeSize, to: doc.content.size };
+      }
+      return { from: doc.content.size, to: doc.content.size };
+    }
+    if (/(^|[\s,;:(])(tout en haut|en haut|au début|au debut|en premier|début du (doc|document|texte)|avant tout)(?=$|[\s,.;:!?)])/i.test(prompt)) {
+      return { from: 0, to: 0 };
+    }
+    return insertionRange(ed);
+  };
+
   const send = async (text: string, options: { quote?: SelectionContext | null } = {}) => {
     const prompt = text.trim() || (files.length ? 'Que contiennent ces fichiers ?' : '');
     if (!prompt || streaming) return;
@@ -323,7 +340,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     const useDocument = Boolean(editor && withDocument);
     const emptyDoc = Boolean(editor && editor.state.doc.textContent.trim() === '' && !docTitle.trim());
     const hint = mode === 'agent' ? actionHint(prompt, useDocument, emptyDoc) : null;
-    const writeRange = editor && useDocument ? insertionRange(editor) : null;
+    const writeRange = editor && useDocument ? requestedRange(editor, prompt) : null;
 
     let request: ChatMessage[];
     if (mode !== 'agent' && editor) {

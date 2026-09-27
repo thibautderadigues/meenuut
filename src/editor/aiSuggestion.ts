@@ -61,6 +61,7 @@ export const AiSuggestion = Extension.create({
   addKeyboardShortcuts() {
     return {
       'Mod-Enter': () => acceptAll(this.editor),
+      'Mod-Backspace': () => rejectAll(this.editor),
       Escape: () => rejectAll(this.editor),
     };
   },
@@ -109,6 +110,38 @@ export const AiSuggestion = Extension.create({
 function decorate(editor: Editor, state: EditorState, pending: Pending): Decoration[] {
   const decorations: Decoration[] = [];
   const deleting = pending.kind === 'delete';
+  // Blocs entiers (paragraphes ajoutés, remplacés ou supprimés) ou texte dans une phrase.
+  const blockLevel = state.doc.resolve(Math.min(pending.from, state.doc.content.size)).depth === 0;
+
+  // Comme dans Cursor : l'ancien texte en rouge, juste avant le nouveau (en vert).
+  const originalBlocks: string[] = [];
+  pending.original.content.forEach((node) => {
+    if (node.textContent.trim()) originalBlocks.push(node.textContent);
+  });
+  const originalText = pending.original.content.textBetween(0, pending.original.content.size, ' ');
+  if (!deleting && pending.kind === 'inline' && originalText) {
+    decorations.push(
+      Decoration.widget(pending.from, () => element('span', 'ai-original', originalText), {
+        side: -1,
+        key: `ai-original-${pending.id}-${originalText.length}`,
+        ignoreSelection: true,
+      }),
+    );
+  }
+  if (!deleting && pending.kind === 'block' && originalBlocks.length) {
+    decorations.push(
+      Decoration.widget(
+        pending.from,
+        () => {
+          const old = element('div', 'ai-original-block');
+          for (const text of originalBlocks) old.append(element('p', '', text));
+          return old;
+        },
+        { side: -1, key: `ai-original-block-${pending.id}`, ignoreSelection: true },
+      ),
+    );
+  }
+
   if (pending.to > pending.from) {
     decorations.push(
       ...rangeDecorations(
@@ -120,61 +153,55 @@ function decorate(editor: Editor, state: EditorState, pending: Pending): Decorat
       ),
     );
   }
-  // Réécriture dans une phrase : l'ancien texte, barré, juste avant le nouveau.
-  const before = pending.original.content.textBetween(0, pending.original.content.size, ' ');
-  if (pending.kind === 'inline' && before) {
-    decorations.push(
-      Decoration.widget(
-        pending.from,
-        () => {
-          const old = document.createElement('span');
-          old.className = 'ai-original';
-          old.textContent = before;
-          return old;
-        },
-        { side: -1, key: `ai-original-${pending.id}-${before.length}`, ignoreSelection: true },
-      ),
-    );
-  }
+
+  // Boutons : en haut à droite d'un groupe de blocs, à la suite d'un changement dans une phrase.
   decorations.push(
-    Decoration.widget(pending.to, () => controls(editor, pending.id, deleting), {
-      side: 1,
-      key: `ai-pending-controls-${pending.id}`,
-      ignoreSelection: true,
-      stopEvent: () => true,
-    }),
+    blockLevel
+      ? Decoration.widget(pending.from, () => controls(editor, pending.id, deleting, 'block'), {
+          side: -2,
+          key: `ai-pending-controls-${pending.id}`,
+          ignoreSelection: true,
+          stopEvent: () => true,
+        })
+      : Decoration.widget(pending.to, () => controls(editor, pending.id, deleting, 'inline'), {
+          side: 1,
+          key: `ai-pending-controls-${pending.id}`,
+          ignoreSelection: true,
+          stopEvent: () => true,
+        }),
   );
   return decorations;
 }
 
-/** Boutons à la suite d'une suggestion. */
-function controls(editor: Editor, id: number, deleting: boolean): HTMLElement {
-  const bar = document.createElement('span');
-  bar.className = 'ai-pending-bar';
-  bar.contentEditable = 'false';
+function element(tag: string, className: string, text?: string): HTMLElement {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+/** Accepter / Refuser d'une modification. */
+function controls(editor: Editor, id: number, deleting: boolean, placement: 'block' | 'inline'): HTMLElement {
+  const wrapper = element(placement === 'block' ? 'div' : 'span', `ai-hunk ai-hunk--${placement}`);
+  wrapper.contentEditable = 'false';
+  const bar = element('span', 'ai-hunk-actions');
   const button = (label: string, title: string, className: string, run: () => void) => {
-    const element = document.createElement('button');
-    element.type = 'button';
-    element.textContent = label;
-    element.title = title;
-    element.className = className;
+    const node = element('button', className, label) as HTMLButtonElement;
+    node.type = 'button';
+    node.title = title;
     // Ne pas déplacer le curseur ni perdre le focus de l'éditeur.
-    element.addEventListener('mousedown', (event) => event.preventDefault());
-    element.addEventListener('click', run);
-    return element;
+    node.addEventListener('mousedown', (event) => event.preventDefault());
+    node.addEventListener('click', run);
+    return node;
   };
   bar.append(
-    button(
-      deleting ? 'Supprimer' : 'Accepter',
-      'Accepter (⌘↵ : tout accepter)',
-      'ai-pending-accept',
-      () => acceptSuggestion(editor, id),
-    ),
-    button(deleting ? 'Garder' : 'Refuser', 'Refuser (Échap : tout refuser)', 'ai-pending-reject', () =>
-      rejectSuggestion(editor, id),
+    button('Refuser', 'Refuser cette modification', 'ai-hunk-reject', () => rejectSuggestion(editor, id)),
+    button(deleting ? 'Supprimer' : 'Accepter', 'Accepter cette modification', 'ai-hunk-accept', () =>
+      acceptSuggestion(editor, id),
     ),
   );
-  return bar;
+  wrapper.append(bar);
+  return wrapper;
 }
 
 /** Ouvre une suggestion sur l'intervalle donné (vide : simple point d'insertion). Renvoie son id. */
