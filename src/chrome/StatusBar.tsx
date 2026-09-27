@@ -17,7 +17,7 @@ const WORDS_PER_MINUTE = 230;
 const countWords = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
 /**
- * Compteur discret (mots, caractères, temps de lecture ; sur la sélection s'il y en a une)
+ * Compteur discret (mots, caractères, temps de lecture ; sur la sélection s'il y en a une ; masqué sur mobile)
  * et indicateur de sauvegarde : "Enregistré" apparaît brièvement puis s'efface.
  */
 export function StatusBar({ editor, status, savedAt, hidden, onRetry }: StatusBarProps) {
@@ -71,7 +71,7 @@ export function StatusBar({ editor, status, savedAt, hidden, onRetry }: StatusBa
   return (
     <div
       data-print-hidden
-      className={`pointer-events-none fixed right-5 bottom-4 flex items-center gap-3 font-sans text-xs text-ink-faint tabular-nums transition-opacity duration-150 select-none ${
+      className={`pointer-events-none fixed right-5 bottom-4 flex max-md:hidden items-center gap-3 font-sans text-xs text-ink-faint tabular-nums transition-opacity duration-150 select-none ${
         hidden ? 'opacity-0' : ''
       }`}
     >

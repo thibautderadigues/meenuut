@@ -348,7 +348,7 @@ export function Toolbar({ editor, onLink }: ToolbarProps) {
       }}
       // Garde le focus et la sélection dans l'éditeur au clic souris.
       onMouseDown={(event) => event.preventDefault()}
-      className="flex w-full items-center justify-center-safe gap-0.5 overflow-x-auto px-3 py-2 font-sans"
+      className="flex w-full items-center justify-center-safe gap-0.5 overflow-x-auto py-2 pr-3 pl-12 font-sans md:pl-3"
     >
       <button
         type="button"
@@ -369,7 +369,8 @@ export function Toolbar({ editor, onLink }: ToolbarProps) {
         className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-accent-soft px-2.5 text-[13px] font-medium text-accent transition-colors duration-100 hover:bg-accent hover:text-white focus-visible:outline-2 focus-visible:outline-accent"
       >
         <PlusIcon />
-        Insérer
+        {/* Sur mobile, le pictogramme seul : la barre défile et le texte passerait sous le bouton de la sidebar. */}
+        <span className="max-md:sr-only">Insérer</span>
       </button>
       <Separator />
 
