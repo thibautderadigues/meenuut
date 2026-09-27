@@ -186,6 +186,23 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const instructions = usePersonalInstructions();
+  // Document dans lequel on a placé le curseur soi-même (clic, frappe) : on écrit là.
+  const cursorPlaced = useRef<string | null>(null);
+  useEffect(() => {
+    if (!editor) return;
+    cursorPlaced.current = null;
+    // Vrais gestes seulement : à l'ouverture, l'éditeur se place de lui-même au début.
+    const mark = () => {
+      cursorPlaced.current = docId;
+    };
+    const dom = editor.view.dom;
+    dom.addEventListener('mousedown', mark);
+    dom.addEventListener('keydown', mark);
+    return () => {
+      dom.removeEventListener('mousedown', mark);
+      dom.removeEventListener('keydown', mark);
+    };
+  }, [editor, docId]);
   // Document ouvert joint au contexte ; on peut le détacher pour parler d'autre chose.
   const [withDocument, setWithDocument] = useState(true);
   useEffect(() => setWithDocument(true), [docId]);
@@ -301,9 +318,16 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     return { from: after, to: after };
   };
 
-  /** « En bas », « à la fin », « au début »… : l'endroit demandé prime sur le curseur. */
+  /**
+   * Où écrire : l'endroit demandé (« en bas », « au début »…), sinon le curseur si on a
+   * cliqué ou tapé dans le document, sinon la fin du document (le curseur par défaut, tout
+   * en haut, n'est pas un choix).
+   */
   const requestedRange = (ed: Editor, prompt: string) => {
     const { doc } = ed.state;
+    const endRange = () => {
+      return endRange();
+    };
     if (/(^|[\s,;:(])(tout en bas|en bas|à la fin|a la fin|en fin de|en dernier|fin du (doc|document|texte)|dernier paragraphe)(?=$|[\s,.;:!?)])/i.test(prompt)) {
       // Une ligne vide en fin de document est remplacée plutôt que laissée au-dessus.
       const last = doc.lastChild;
@@ -315,7 +339,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     if (/(^|[\s,;:(])(tout en haut|en haut|au début|au debut|en premier|début du (doc|document|texte)|avant tout)(?=$|[\s,.;:!?)])/i.test(prompt)) {
       return { from: 0, to: 0 };
     }
-    return insertionRange(ed);
+    return cursorPlaced.current === docId ? insertionRange(ed) : endRange();
   };
 
   const send = async (text: string, options: { quote?: SelectionContext | null } = {}) => {
