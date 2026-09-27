@@ -1,7 +1,4 @@
-import { generateJSON, type JSONContent } from '@tiptap/core';
-import DOMPurify from 'dompurify';
-import { marked } from 'marked';
-import { createExtensions } from '../editor/extensions';
+import type { JSONContent } from '@tiptap/core';
 import { supabase } from '../sync/supabase';
 
 /** Proposition de l'assistant : rien n'est appliqué sans le clic de l'utilisateur. */
@@ -37,6 +34,9 @@ export const ERROR_MESSAGES: Record<AssistantError['code'], string> = {
   server: 'L’assistant n’a pas pu répondre. Réessayez dans un instant.',
 };
 
+const RETRIES_ON_SATURATION = 2;
+const RETRY_DELAY_MS = 1500;
+
 /** Réponse de l'IA, morceau par morceau (flux SSE relayé par la fonction Supabase). */
 export async function* streamReply(
   messages: ChatMessage[],
@@ -47,9 +47,8 @@ export async function* streamReply(
   const token = data.session?.access_token;
   if (!token) throw new AssistantError('signed-out');
 
-  let response: Response;
-  try {
-    response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/assistant`, {
+  const call = () =>
+    fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/assistant`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -59,6 +58,16 @@ export async function* streamReply(
       body: JSON.stringify({ messages, mode }),
       signal,
     });
+
+  let response: Response;
+  try {
+    response = await call();
+    // Offre gratuite saturée : souvent passager, un second essai discret suffit.
+    for (let attempt = 1; response.status === 429 && attempt <= RETRIES_ON_SATURATION; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS * attempt));
+      if (signal.aborted) return;
+      response = await call();
+    }
   } catch (error) {
     if (signal.aborted) return;
     console.error(error);
@@ -107,7 +116,15 @@ Principes :
 - Réponds dans la langue de la personne et reprends son registre (tutoiement ou vouvoiement).
 - Mise en forme légère en Markdown : paragraphes courts, listes seulement quand elles aident, gras avec parcimonie, pas de titres dans une réponse de quelques lignes.
 - Tu ne modifies jamais un document toi-même : la personne applique tes propositions. Ne dis donc pas « j’ai modifié » ou « j’ai créé ».
-- Formats que l’éditeur sait afficher : paragraphes, titres ## et ###, listes à puces ou numérotées, cases à cocher (- [ ]), gras, italique, liens, citations (>), tableaux Markdown, blocs de code. N’utilise ni formules LaTeX ($…$), ni encadrés (> [!NOTE]), ni HTML.`;
+- Dans la conversation, reste en Markdown simple : paragraphes, listes, gras, italique, liens, tableaux, blocs de code. Pas de formules, d’encadrés ni de HTML.`;
+
+/** Blocs de Meenuut que l'IA peut produire quand elle écrit dans un document. */
+const RICH_FORMATS = `Quand tu écris dans un document, tu peux utiliser, en plus du Markdown (titres ## et ###, listes, gras, italique, liens, citations >, tableaux, blocs de code), les blocs de Meenuut suivants. Sers-t’en quand ils rendent le document plus clair, sans en abuser :
+- encadré coloré : une citation commençant par un type, par ex. « > [!TIP] » puis le texte à la ligne suivante (« > … »). Types : NOTE (information), TIP (astuce), IMPORTANT (à retenir), WARNING (attention), CAUTION (danger) ;
+- bloc dépliable (FAQ, détails optionnels) : <details><summary>Question ou titre</summary> puis le contenu en Markdown, puis </details> ;
+- cases à cocher (tâches, check-lists) : « - [ ] tâche » ou « - [x] tâche faite » ;
+- surlignage d’un mot important : ==texte== ;
+- formules mathématiques : $x^2$ dans une phrase, ou $$ sur leur propre ligne pour une formule centrée.`;
 
 /** Préfixe d'une réponse qui demande une précision au lieu d'écrire. */
 export const QUESTION_PREFIX = 'QUESTION:';
@@ -132,17 +149,20 @@ On te demande de rédiger un nouveau document. Réponds uniquement par le docume
 - des sections « ## » seulement si le sujet le justifie ;
 - du contenu concret et directement utilisable, sans texte de remplissage ni crochets à compléter.
 
+${RICH_FORMATS}
+
 ${ASK_FIRST}`;
 
 /** Contexte du document ouvert, sans les images (inutiles et coûteuses). */
-export function chatSystem(docTitle: string, docMarkdown: string): string {
+export function chatSystem(docTitle: string, docMarkdown: string, section = ''): string {
   const MAX = 60_000;
   const cleaned = docMarkdown.replace(/!\[[^\]]*\]\(data:[^)]*\)/g, '[image]');
   const body =
     cleaned.length > MAX
       ? `${cleaned.slice(0, MAX)}\n\n[… document tronqué : seul le début est fourni]`
       : cleaned;
-  return `${BASE}\n\n${documentContext(docTitle, body)}`;
+  const where = section ? `\n\nLa personne est actuellement dans la section « ${section} » du document.` : '';
+  return `${BASE}\n\n${documentContext(docTitle, body)}${where}`;
 }
 
 function documentContext(docTitle: string, body: string): string {
@@ -150,10 +170,12 @@ function documentContext(docTitle: string, body: string): string {
 }
 
 /** Rédiger un passage à insérer dans le document ouvert (« écris un paragraphe sur… »). */
-export function writeSystem(docTitle: string, docMarkdown: string): string {
-  return `${chatSystem(docTitle, docMarkdown)}
+export function writeSystem(docTitle: string, docMarkdown: string, section = ''): string {
+  return `${chatSystem(docTitle, docMarkdown, section)}
 
 On te demande de rédiger un passage à insérer dans ce document, à l’endroit indiqué. Il doit s’y intégrer naturellement : dans la suite logique de ce qui précède, sans répéter ce qui est déjà écrit, dans la langue et le ton du document. Réponds UNIQUEMENT par ce passage, prêt à être inséré : pas de préambule, pas de commentaire, pas de titre sauf si on t’en demande un. Écris un vrai texte, concret, sur le sujet demandé (ou, faute de sujet, sur celui du document).
+
+${RICH_FORMATS}
 
 ${ASK_FIRST}`;
 }
@@ -163,19 +185,6 @@ export const REWRITE_PATTERN =
 export const WRITE_PATTERN =
   /^(écris|ecris|rédige|redige|ajoute|génère|genere|propose|fais)(-moi|\s+moi)?\s+(un|une|des|la|le|l’|l')?\s*(\S+\s+)?(paragraphe|phrase|intro|introduction|conclusion|texte|liste|tableau|section|partie|plan|exemple)/i;
 export const CREATE_PATTERN = /\b(cré|rédige|écris)\w*\s+(moi\s+)?(un|une)\s+(nouveau\s+)?(doc|document|note|page)/i;
-
-// --- Markdown → document ---
-
-const extensions = createExtensions({ onTableOfContents: () => {}, onEditMath: () => {} });
-
-/** Markdown de l'IA → HTML nettoyé (affichage dans la conversation, insertion). */
-export function markdownToHtml(markdown: string): string {
-  return DOMPurify.sanitize(marked.parse(markdown, { async: false, gfm: true, breaks: false }));
-}
-
-export function markdownToContent(markdown: string): JSONContent {
-  return generateJSON(markdownToHtml(markdown), extensions);
-}
 
 /** « # Titre » en tête → titre du document, le reste → contenu. */
 export function splitTitle(markdown: string): { title: string; body: string } {

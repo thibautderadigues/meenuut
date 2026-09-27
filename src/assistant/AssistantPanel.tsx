@@ -27,6 +27,7 @@ import {
   PlusIcon,
   PaperclipIcon,
   PencilIcon,
+  UndoIcon,
   StopIcon,
 } from '../ui/icons';
 import {
@@ -35,8 +36,6 @@ import {
   CREATE_PATTERN,
   CREATE_SYSTEM,
   ERROR_MESSAGES,
-  markdownToContent,
-  markdownToHtml,
   REWRITE_PATTERN,
   QUESTION_PREFIX,
   REWRITE_SYSTEM,
@@ -47,9 +46,11 @@ import {
   type ChatMessage,
   type Proposal,
 } from './ai';
+import { markdownToContent, markdownToHtml, markdownToRichHtml } from './markdown';
 import {
   clearSelectionContext,
   closeAssistant,
+  takePendingPrompt,
   setSelectionContext,
   useAssistant,
   type SelectionContext,
@@ -119,8 +120,21 @@ const HISTORY_LENGTH = 12;
 const quoted = (selection: SelectionContext | null | undefined) =>
   selection ? `Passage sélectionné dans le document :\n« ${selection.text} »\n\n` : '';
 
-const SELECTION_SUGGESTIONS = ['Reformule ce passage', 'Raccourcis-le', 'Corrige les fautes', 'Explique-moi ce passage', 'Traduis en anglais'];
-const DOC_SUGGESTIONS = ['Résume ce document', 'Quels sont les points clés ?', 'Crée un doc sur mes idées de projet'];
+const SELECTION_SUGGESTIONS = ['Reformule ce passage', 'Raccourcis-le', 'Corrige les fautes', 'Explique-moi ce passage ?', 'Traduis en anglais'];
+/** Document vide ou presque : aider à démarrer. */
+const EMPTY_DOC_SUGGESTIONS = ['Propose un plan pour ce document', 'Écris une introduction', 'Crée un doc de liste de choses à faire'];
+const DOC_SUGGESTIONS = ['Résume ce document', 'Quels sont les points clés ?', 'Écris une conclusion', 'Relis et signale les fautes ?'];
+
+/** Dernier titre avant le curseur : la section où l'on se trouve. */
+function currentSection(editor: Editor): string {
+  const { from } = editor.state.selection;
+  let section = '';
+  editor.state.doc.nodesBetween(0, from, (node) => {
+    if (node.type.name === 'heading') section = node.textContent;
+    return node.isBlock && !node.isTextblock;
+  });
+  return section.trim();
+}
 
 const excerpt = (text: string, max = 90) => {
   const clean = text.replace(/\s+/g, ' ').trim();
@@ -168,9 +182,11 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     };
   }, [open, editor, docId]);
 
+  // Défile avec la réponse, sauf si on est remonté lire plus haut.
+  const stickToBottom = useRef(true);
   useEffect(() => {
     const scroller = scrollRef.current;
-    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    if (scroller && stickToBottom.current) scroller.scrollTop = scroller.scrollHeight;
   }, [messages]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -239,11 +255,12 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     return { from: after, to: after };
   };
 
-  const send = async (text: string) => {
+  const send = async (text: string, options: { quote?: SelectionContext | null } = {}) => {
     const prompt = text.trim() || (files.length ? 'Que contiennent ces fichiers ?' : '');
     if (!prompt || streaming) return;
+    stickToBottom.current = true;
 
-    const target = selection;
+    const target = options.quote !== undefined ? options.quote : selection;
     const pending = editor ? getPending(editor.state) : null;
     // Suggestion en attente dans le document : une consigne la réécrit sur place
     // (une question, elle, reste une conversation). Sinon : réécriture d'un extrait,
@@ -291,12 +308,13 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
         return content ? [{ role: 'assistant', content }] : [];
       });
       const docMarkdown = editor ? toMarkdown(docTitle, editor.getJSON()) : '';
+      const section = editor ? currentSection(editor) : '';
       const system =
         intent === 'create'
           ? CREATE_SYSTEM
           : intent === 'write'
-            ? writeSystem(docTitle, docMarkdown)
-            : chatSystem(docTitle, docMarkdown);
+            ? writeSystem(docTitle, docMarkdown, section)
+            : chatSystem(docTitle, docMarkdown, section);
       request = [
         { role: 'system', content: withInstructions(system, instructions.text) },
         ...history,
@@ -316,7 +334,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
         ? markdown.trim()
           ? [{ type: 'text', text: markdown.trim() }]
           : ''
-        : markdownToHtml(markdown);
+        : markdownToRichHtml(markdown);
 
     const answerId = ++messageCount;
     setMessages((list) => [
@@ -466,7 +484,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
 
     if (proposal.kind === 'insert') {
       if (!editor) return;
-      insertMarked(editor, markdownToHtml(proposal.markdown));
+      insertMarked(editor, markdownToRichHtml(proposal.markdown));
       updateMessage(message.id, { status: 'applied' });
       return;
     }
@@ -501,8 +519,33 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
       void send(draft);
+    } else if (event.key === 'ArrowUp' && !draft) {
+      // ↑ dans le champ vide : reprendre la dernière demande pour la corriger.
+      const lastUser = [...messages].reverse().find((message) => message.role === 'user');
+      if (lastUser) {
+        event.preventDefault();
+        setDraft(lastUser.text);
+      }
     }
   };
+
+  /** Relance la dernière demande (erreur, ou autre réponse souhaitée). */
+  const retry = (answerId: number) => {
+    const index = messages.findIndex((message) => message.id === answerId);
+    const question = messages[index - 1];
+    if (!question || question.role !== 'user') return;
+    setMessages((list) => list.filter((message) => message.id !== answerId && message.id !== question.id));
+    void send(question.text, { quote: question.quote });
+  };
+
+  // Action en un clic depuis le texte (« Reformuler »…) : envoyée dès l'ouverture.
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  useEffect(() => {
+    if (!open) return;
+    const prompt = takePendingPrompt();
+    if (prompt) void sendRef.current(prompt);
+  }, [open, focusRequest]);
 
   const onPanelKeyDown = (event: KeyboardEvent) => {
     if (event.key !== 'Escape') return;
@@ -511,7 +554,12 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     editor?.commands.focus();
   };
 
-  const suggestions = selection ? SELECTION_SUGGESTIONS : DOC_SUGGESTIONS;
+  const words = (editor?.storage.characterCount?.words() as number | undefined) ?? 0;
+  const suggestions = selection
+    ? SELECTION_SUGGESTIONS
+    : words < 30
+      ? EMPTY_DOC_SUGGESTIONS
+      : DOC_SUGGESTIONS;
 
   return (
     <aside
@@ -601,7 +649,14 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
         </section>
       )}
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+      <div
+        ref={scrollRef}
+        onScroll={(event) => {
+          const el = event.currentTarget;
+          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+        }}
+        className="min-h-0 flex-1 overflow-y-auto px-4 pb-4"
+      >
         {messages.length === 0 ? (
           <div className="animate-fade-in pt-[12vh]">
             <p className="text-[15px] font-medium text-ink">Comment puis-je aider ?</p>
@@ -663,7 +718,20 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                       />
                     )
                   )}
-                  {message.error && <p className="text-[13px] text-danger">{message.error}</p>}
+                  {message.error && (
+                    <p className="flex items-center gap-2 text-[13px] text-danger">
+                      {message.error}
+                      {!streaming && (
+                        <button
+                          type="button"
+                          onClick={() => retry(message.id)}
+                          className="rounded px-1.5 py-0.5 text-xs text-ink-muted underline underline-offset-2 hover:text-ink"
+                        >
+                          Réessayer
+                        </button>
+                      )}
+                    </p>
+                  )}
                   {message.errorDetail && (
                     <p className="mt-1 font-mono text-[10px] break-all text-ink-faint select-text">
                       {message.errorDetail}
@@ -681,6 +749,11 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                           updateMessage(message.id, { status: 'dismissed' });
                         }
                       }}
+                      onRevise={
+                        message.proposal?.kind === 'inline' && !streaming
+                          ? (prompt: string) => void send(prompt)
+                          : undefined
+                      }
                       onUndo={
                         message.proposal?.kind === 'create' && message.createdId
                           ? () => {
@@ -718,8 +791,11 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                       <SmallAction
                         label="Insérer dans le document"
                         icon={<PlusIcon />}
-                        onClick={() => editor && insertMarked(editor, markdownToHtml(message.text))}
+                        onClick={() => editor && insertMarked(editor, markdownToRichHtml(message.text))}
                       />
+                      {message.id === messages.at(-1)?.id && !streaming && (
+                        <SmallAction label="Régénérer" icon={<UndoIcon />} onClick={() => retry(message.id)} />
+                      )}
                     </div>
                   )}
                 </li>
@@ -851,9 +927,18 @@ interface ProposalCardProps {
   onShow?: () => void;
   /** Document créé : l'envoyer à la corbeille. */
   onUndo?: () => void;
+  /** Suggestion en attente : la réécrire selon une consigne rapide. */
+  onRevise?: (prompt: string) => void;
 }
 
-function ProposalCard({ proposal, status, onApply, onDismiss, onOpen, onShow, onUndo }: ProposalCardProps) {
+const REVISIONS = [
+  { label: 'Plus court', prompt: 'Rends-le plus court' },
+  { label: 'Plus développé', prompt: 'Développe-le davantage' },
+  { label: 'Plus simple', prompt: 'Rends-le plus simple et plus clair' },
+  { label: 'Autre version', prompt: 'Propose une autre version, différente' },
+];
+
+function ProposalCard({ proposal, status, onApply, onDismiss, onOpen, onShow, onUndo, onRevise }: ProposalCardProps) {
   if (proposal.kind === 'inline') {
     return (
       <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-rule-strong bg-canvas px-3 py-2 text-xs">
@@ -891,9 +976,23 @@ function ProposalCard({ proposal, status, onApply, onDismiss, onOpen, onShow, on
             </button>
           </>
         )}
+        {status === 'pending' && onRevise && (
+          <div className="flex w-full flex-wrap gap-1 pt-0.5">
+            {REVISIONS.map((revision) => (
+              <button
+                key={revision.label}
+                type="button"
+                onClick={() => onRevise(revision.prompt)}
+                className="rounded-full border border-rule px-2 py-0.5 text-[11px] text-ink-muted transition-colors hover:border-rule-strong hover:text-ink"
+              >
+                {revision.label}
+              </button>
+            ))}
+          </div>
+        )}
         {status === 'pending' && (
           <p className="w-full text-[11px] text-ink-faint">
-            Pour la modifier, écrivez ici ce qu’il faut changer (« plus court », « plus drôle »…).
+            Ou écrivez ce qu’il faut changer. Dans le texte : ⌘↵ accepte, Échap refuse.
           </p>
         )}
       </div>

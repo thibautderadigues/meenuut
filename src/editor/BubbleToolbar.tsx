@@ -8,7 +8,9 @@ import { IconButton } from '../ui/IconButton';
 import { AssistantIcon } from '../assistant/AssistantIcon';
 import { ASSISTANT_NAME } from '../assistant/provider';
 import { openAssistant } from '../assistant/store';
-import { CheckIcon, ExternalIcon, LinkIcon, PencilIcon, UnlinkIcon } from '../ui/icons';
+import { CheckIcon, ChevronDownIcon, ExternalIcon, LinkIcon, PencilIcon, UnlinkIcon } from '../ui/icons';
+import { Menu } from '../ui/Menu';
+import { QUICK_ACTIONS } from '../assistant/quickActions';
 import { activeMarks, MARK_BUTTONS } from './marks';
 import { ColorPicker } from './ColorPicker';
 import type { Point } from '../ui/Popover';
@@ -35,6 +37,11 @@ export function BubbleToolbar({ editor, docId, linkRequest }: BubbleToolbarProps
   // Lu par shouldShow, qui vit dans le plugin : doit être à jour immédiatement, pas au prochain rendu.
   const editingLinkRef = useRef(false);
   const [colorAnchor, setColorAnchor] = useState<Point | null>(null);
+  const [quickAnchor, setQuickAnchor] = useState<Point | null>(null);
+  const currentExtract = () => {
+    const { from, to } = editor.state.selection;
+    return { docId, from, to, text: editor.state.doc.textBetween(from, to, '\n') };
+  };
 
   const setEditingLink = useCallback((value: boolean) => {
     editingLinkRef.current = value;
@@ -188,14 +195,25 @@ export function BubbleToolbar({ editor, docId, linkRequest }: BubbleToolbarProps
         <button
           type="button"
           data-tooltip={`Demander à ${ASSISTANT_NAME} à propos de ce passage`}
-          onClick={() => {
-            const { from, to } = editor.state.selection;
-            openAssistant({ docId, from, to, text: editor.state.doc.textBetween(from, to, '\n') });
-          }}
-          className="flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium text-ai transition-colors duration-100 hover:bg-ai-soft focus-visible:outline-2 focus-visible:outline-accent"
+          data-shortcut={keys('alt', 'Espace')}
+          onClick={() => openAssistant(currentExtract())}
+          className="flex h-8 shrink-0 items-center gap-1.5 rounded-l-md py-0 pr-1.5 pl-2 text-[13px] font-medium text-ai transition-colors duration-100 hover:bg-ai-soft focus-visible:outline-2 focus-visible:outline-accent"
         >
           <AssistantIcon />
           Demander
+        </button>
+        <button
+          type="button"
+          aria-label="Actions rapides"
+          aria-haspopup="menu"
+          data-tooltip="Actions rapides"
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            setQuickAnchor({ x: rect.left, y: rect.bottom + 4 });
+          }}
+          className="grid h-8 w-5 shrink-0 place-items-center rounded-r-md text-ai transition-colors duration-100 hover:bg-ai-soft focus-visible:outline-2 focus-visible:outline-accent [&_svg]:size-3.5"
+        >
+          <ChevronDownIcon />
         </button>
       </div>
     );
@@ -219,6 +237,18 @@ export function BubbleToolbar({ editor, docId, linkRequest }: BubbleToolbarProps
       >
         {content}
       </div>
+      {quickAnchor && (
+        <Menu
+          label="Actions rapides"
+          anchor={quickAnchor}
+          onClose={() => setQuickAnchor(null)}
+          entries={QUICK_ACTIONS.map((action) => ({
+            label: action.label,
+            icon: action.icon,
+            run: () => openAssistant(currentExtract(), action.prompt),
+          }))}
+        />
+      )}
       {colorAnchor && (
         <ColorPicker editor={editor} anchor={colorAnchor} onClose={() => setColorAnchor(null)} />
       )}

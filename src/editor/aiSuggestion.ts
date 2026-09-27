@@ -45,6 +45,7 @@ export const AiSuggestion = Extension.create({
   addKeyboardShortcuts() {
     return {
       'Mod-Enter': () => (getPending(this.editor.state) ? acceptSuggestion(this.editor) : false),
+      Escape: () => (getPending(this.editor.state) ? rejectSuggestion(this.editor) : false),
     };
   },
 
@@ -109,7 +110,7 @@ function controls(editor: Editor): HTMLElement {
   };
   bar.append(
     button('Accepter', 'Accepter (⌘↵)', 'ai-pending-accept', () => acceptSuggestion(editor)),
-    button('Refuser', 'Refuser et remettre le texte d’avant', 'ai-pending-reject', () =>
+    button('Refuser', 'Refuser et remettre le texte d’avant (Échap)', 'ai-pending-reject', () =>
       rejectSuggestion(editor),
     ),
   );

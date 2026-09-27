@@ -13,9 +13,11 @@ interface AssistantState {
   selection: SelectionContext | null;
   /** Incrémenté à chaque ouverture demandée : le panneau place alors le focus dans le champ. */
   focusRequest: number;
+  /** Demande à envoyer dès l'ouverture (action en un clic depuis le texte). */
+  pendingPrompt: string | null;
 }
 
-let state: AssistantState = { open: false, selection: null, focusRequest: 0 };
+let state: AssistantState = { open: false, selection: null, focusRequest: 0, pendingPrompt: null };
 const listeners = new Set<() => void>();
 
 function set(next: Partial<AssistantState>) {
@@ -33,9 +35,21 @@ export function useAssistant(): AssistantState {
   );
 }
 
-/** Ouvre le panneau, avec le passage sélectionné s'il y en a un. */
-export function openAssistant(selection: SelectionContext | null = null) {
-  set({ open: true, selection: selection ?? state.selection, focusRequest: state.focusRequest + 1 });
+/** Ouvre le panneau, avec l'extrait sélectionné s'il y en a un, et éventuellement une demande à envoyer. */
+export function openAssistant(selection: SelectionContext | null = null, prompt: string | null = null) {
+  set({
+    open: true,
+    selection: selection ?? state.selection,
+    focusRequest: state.focusRequest + 1,
+    pendingPrompt: prompt,
+  });
+}
+
+/** Le panneau a pris la demande en charge. */
+export function takePendingPrompt(): string | null {
+  const prompt = state.pendingPrompt;
+  if (prompt !== null) set({ pendingPrompt: null });
+  return prompt;
 }
 
 export function closeAssistant() {

@@ -21,6 +21,9 @@ import {
 } from '../../ui/icons';
 import { insertImages } from '../insertImages';
 import { requestTablePicker } from '../TablePicker';
+import { AssistantIcon } from '../../assistant/AssistantIcon';
+import { ASSISTANT_NAME } from '../../assistant/provider';
+import { openAssistant } from '../../assistant/store';
 
 export interface SlashItem {
   id: string;
@@ -37,6 +40,17 @@ export interface SlashItem {
 }
 
 export const SLASH_ITEMS: SlashItem[] = [
+  {
+    id: 'assistant',
+    label: `Demander à ${ASSISTANT_NAME}`,
+    keywords: ['ia', 'ai', 'assistant', 'mistral', 'écrire', 'rédiger', 'aide'],
+    description: 'Faire écrire, résumer ou reformuler par l’assistant',
+    icon: AssistantIcon,
+    run: (chain) => {
+      chain.run();
+      openAssistant(null);
+    },
+  },
   {
     id: 'paragraph',
     label: 'Texte',
