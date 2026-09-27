@@ -86,3 +86,15 @@ test('plusieurs modifications, une par une ou toutes', async () => {
   expect(e.getHTML()).toBe('<p>Ils sont partis tôt.</p><p>Le <strong>train</strong> était en retard.</p>');
   expect(getPendings(e.state)).toHaveLength(0);
 });
+
+test('écriture en direct, morceau par morceau (liste entamée comprise)', async () => {
+  const { markdownToRichHtml } = await import('../../assistant/markdown');
+  const e = new Editor({ extensions: [StarterKit, AiHighlight, AiSuggestion], content: '<p>Intro</p><p></p>' });
+  const doc = e.state.doc;
+  const last = doc.lastChild!;
+  const id = beginSuggestion(e, doc.content.size - last.nodeSize, doc.content.size, 'block', true);
+  const full = '## Synchronisation\n\nMeenuut synchronise vos documents.\n\n- **Hors ligne** : tout reste là\n- Point vert';
+  // « - » seul (puce vide) à certaines étapes : ne doit ni planter ni perdre de texte.
+  for (let i = 1; i <= full.length; i++) writeSuggestion(e, markdownToRichHtml(full.slice(0, i)), id);
+  expect(e.getHTML()).toContain('<h2>Synchronisation</h2><p>Meenuut synchronise vos documents.</p><ul><li><p><strong>Hors ligne</strong> : tout reste là</p></li><li><p>Point vert</p></li></ul>');
+});

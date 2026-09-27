@@ -278,14 +278,19 @@ export function writeSuggestion(editor: Editor, content: Content, id?: number) {
   const pending = getPending(editor.state, id);
   if (!pending || pending.kind === 'delete') return;
   const before = editor.state.doc.content.size;
-  editor
-    .chain()
-    .command(({ tr }) => {
-      tr.setMeta('addToHistory', false);
-      return true;
-    })
-    .insertContentAt({ from: pending.from, to: pending.to }, content, { updateSelection: false })
-    .run();
+  try {
+    editor
+      .chain()
+      .command(({ tr }) => {
+        tr.setMeta('addToHistory', false);
+        return true;
+      })
+      .insertContentAt({ from: pending.from, to: pending.to }, content, { updateSelection: false })
+      .run();
+  } catch {
+    // Texte en cours d'écriture momentanément invalide (liste entamée…) : l'étape suivante le complétera.
+    return;
+  }
   const to = pending.to + (editor.state.doc.content.size - before);
   editor.view.dispatch(
     editor.state.tr

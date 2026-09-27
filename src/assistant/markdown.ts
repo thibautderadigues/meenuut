@@ -90,6 +90,14 @@ export function markdownToRichHtml(markdown: string): string {
     quote.replaceWith(callout);
   }
 
+  // Puces vides (texte en cours d'écriture : « - » sans rien derrière) : l'éditeur les refuse.
+  for (const item of Array.from(root.querySelectorAll('li'))) {
+    if (!item.textContent?.trim() && !item.querySelector('img, input')) item.remove();
+  }
+  for (const list of Array.from(root.querySelectorAll('ul, ol'))) {
+    if (!list.querySelector('li')) list.remove();
+  }
+
   for (const list of Array.from(root.querySelectorAll('ul'))) {
     const items = Array.from(list.children).filter((child) => child.tagName === 'LI');
     const isTasks = items.length > 0 && items.every((item) => item.querySelector(':scope > input[type="checkbox"], :scope > p > input[type="checkbox"]'));
