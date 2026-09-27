@@ -54,7 +54,7 @@ export function Editor({ doc, title, focusMode, onEditor }: EditorProps) {
     if (editor) await saveBody(id, editor.getJSON(), editor.getText());
   }, [id]);
 
-  const { status, savedAt, markDirty, flush, saveNow } = useAutosave(save);
+  const { status, markDirty, flush, saveNow } = useAutosave(save);
 
   const editor = useEditor({
     extensions,
@@ -178,7 +178,6 @@ export function Editor({ doc, title, focusMode, onEditor }: EditorProps) {
       <StatusBar
         editor={editor}
         status={status}
-        savedAt={savedAt}
         hidden={focusMode}
         onRetry={flush}
       />

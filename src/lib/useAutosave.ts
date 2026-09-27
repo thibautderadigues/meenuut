@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+/** `dirty` : modifié, écriture pas encore partie (délai d'inactivité). */
+export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
 /** IndexedDB répond presque toujours sous ce seuil : on n'affiche "Enregistrement…" qu'au-delà. */
 const SLOW_SAVE_MS = 300;
@@ -46,6 +47,7 @@ export function useAutosave(save: () => Promise<void>, delay = 400) {
 
   const markDirty = useCallback(() => {
     dirty.current = true;
+    setState((s) => (s.status === 'dirty' ? s : { ...s, status: 'dirty' }));
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(flush, delay);
   }, [flush, delay]);
