@@ -1,6 +1,6 @@
 import type { Editor } from '@tiptap/react';
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { createDocumentWith, deleteDocument, latestDocumentId } from '../db/documents';
+import { createDocumentWith, deleteDocument, latestDocumentId, renameDocument } from '../db/documents';
 import { plainText } from '../lib/sampleDocument';
 import { insertMarked } from '../editor/aiHighlight';
 import {
@@ -147,10 +147,11 @@ const quoted = (selection: SelectionContext | null | undefined) =>
 
 const SELECTION_SUGGESTIONS = ['Reformule ce passage', 'Raccourcis-le', 'Corrige les fautes', 'Explique-moi ce passage ?', 'Traduis en anglais'];
 /** Document vide ou presque : aider à démarrer. */
-const EMPTY_DOC_SUGGESTIONS = ['Propose un plan pour ce document', 'Écris une introduction', 'Crée un doc de liste de choses à faire'];
+/** Document vide : ce qu'il pourrait contenir (« … » : à compléter avant d'envoyer). */
+const EMPTY_DOC_SUGGESTIONS = ['Une fiche de révision sur…', 'Un carnet de voyage pour…', 'Un plan de projet pour…', 'Une liste de choses à faire cette semaine'];
 const DOC_SUGGESTIONS = ['Résume ce document', 'Quels sont les points clés ?', 'Continue le texte', 'Écris une conclusion', 'Relis et signale les fautes ?'];
 /** Sans document : conversation libre, ou nouveau document. */
-const FREE_SUGGESTIONS = ['Crée un document sur ', 'Explique-moi simplement… ?', 'Fais-moi un plan de révision pour… '];
+const FREE_SUGGESTIONS = ['Crée un document sur…', 'Explique-moi simplement…', 'Fais-moi un plan de révision pour…'];
 
 /** Dernier titre avant le curseur : la section où l'on se trouve. */
 function currentSection(editor: Editor): string {
@@ -188,6 +189,15 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
   // Document ouvert joint au contexte ; on peut le détacher pour parler d'autre chose.
   const [withDocument, setWithDocument] = useState(true);
   useEffect(() => setWithDocument(true), [docId]);
+
+  // Document vide tout juste ouvert (« Nouveau document avec Mistral ») : le champ du panneau
+  // garde la main, plutôt que le titre du document.
+  useEffect(() => {
+    if (!open || !editor || !editor.isEmpty || docTitle.trim()) return;
+    const timer = window.setTimeout(() => inputRef.current?.focus(), 120);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seulement à l'ouverture d'un document
+  }, [docId, editor]);
   const [showInstructions, setShowInstructions] = useState(false);
 
   // Un passage d'un autre document ne vaut plus comme contexte.
@@ -311,7 +321,8 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       ? `\n\n[Fichiers joints, que l’assistant ne sait pas encore lire : ${files.map((file) => file.name).join(', ')}]`
       : '';
     const useDocument = Boolean(editor && withDocument);
-    const hint = mode === 'agent' ? actionHint(prompt, useDocument) : null;
+    const emptyDoc = Boolean(editor && editor.state.doc.textContent.trim() === '' && !docTitle.trim());
+    const hint = mode === 'agent' ? actionHint(prompt, useDocument, emptyDoc) : null;
     const writeRange = editor && useDocument ? insertionRange(editor) : null;
 
     let request: ChatMessage[];
@@ -339,6 +350,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
               docTitle,
               docMarkdown: toMarkdown(docTitle, editor.getJSON()),
               section: currentSection(editor),
+              empty: emptyDoc,
               before: editor.state.doc
                 .textBetween(Math.max(0, writeRange.from - 300), writeRange.from, '\n')
                 .slice(-300)
@@ -446,7 +458,12 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       }
 
       if (action === 'write' && editor && suggestion) {
-        if (body().trim()) writeSuggestion(editor, render(body()), suggestion.id);
+        // Document vide et sans titre : le « # Titre » écrit par l'IA devient son titre.
+        if (emptyDoc && docId && /^\s*#\s/.test(body())) {
+          const { title, body: rest } = splitTitle(stripChatter(body()));
+          writeSuggestion(editor, render(rest), suggestion.id);
+          void renameDocument(docId, title);
+        } else if (body().trim()) writeSuggestion(editor, render(body()), suggestion.id);
         else if (mode !== 'revise') rejectSuggestion(editor, suggestion.id);
         const alive = getPending(editor.state, suggestion.id);
         updateMessage(answerId, { written: body(), status: alive ? 'pending' : 'dismissed' });
@@ -690,6 +707,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
   };
 
   const words = (editor?.storage.characterCount?.words() as number | undefined) ?? 0;
+  const documentEmpty = words === 0 && !docTitle.trim();
   const suggestions = selection
     ? SELECTION_SUGGESTIONS
     : !withDocument
@@ -806,7 +824,16 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                 <button
                   key={suggestion}
                   type="button"
-                  onClick={() => void send(suggestion)}
+                  onClick={() => {
+                    // Suggestion à compléter (« … ») : dans le champ, curseur à la fin.
+                    if (!suggestion.endsWith('…')) return void send(suggestion);
+                    const text = `${suggestion.slice(0, -1)} `;
+                    setDraft(text);
+                    requestAnimationFrame(() => {
+                      inputRef.current?.focus();
+                      inputRef.current?.setSelectionRange(text.length, text.length);
+                    });
+                  }}
                   className="rounded-lg border border-rule px-2.5 py-1.5 text-left text-[13px] text-ink-muted transition-colors duration-100 hover:border-rule-strong hover:bg-canvas hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
                 >
                   {suggestion}
@@ -1042,7 +1069,13 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
               ref={inputRef}
               rows={1}
               value={draft}
-              placeholder={selection ? 'Que faire de ce passage ?' : `Demander à ${ASSISTANT_NAME}…`}
+              placeholder={
+                selection
+                  ? 'Que faire de ce passage ?'
+                  : documentEmpty && withDocument
+                    ? 'Que doit contenir ce document ?'
+                    : `Demander à ${ASSISTANT_NAME}…`
+              }
               aria-label={`Message à ${ASSISTANT_NAME}`}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={onInputKeyDown}

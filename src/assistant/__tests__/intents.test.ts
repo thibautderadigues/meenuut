@@ -109,3 +109,9 @@ test('document entouré de ```markdown', () => {
   expect(unwrapFence('```python\nprint(1)\n```')).toBe('```python\nprint(1)\n```');
   expect(unwrapFence('# Titre\n\n```js\nx()\n```')).toBe('# Titre\n\n```js\nx()\n```');
 });
+
+test('document vide : toute demande de contenu s’y écrit', () => {
+  expect(actionHint('Crée une fiche de révision sur la Révolution', true, true)).toBe('write');
+  expect(actionHint('Un carnet de voyage pour Lisbonne', true, true)).toBe('write');
+  expect(actionHint('Tu peux faire quoi ?', true, true)).toBeNull();
+});

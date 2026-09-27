@@ -24,6 +24,8 @@ import { fuzzyMatch } from './fuzzy';
 import { AssistantIcon } from '../assistant/AssistantIcon';
 import { ASSISTANT_NAME } from '../assistant/provider';
 import { openAssistant } from '../assistant/store';
+import { createDocument } from '../db/documents';
+import { openDocumentRoute } from '../lib/router';
 
 export interface Command {
   id: string;
@@ -89,8 +91,12 @@ export function buildCommands(ctx: PaletteContext): Command[] {
       label: `Nouveau document avec ${ASSISTANT_NAME}…`,
       keywords: ['ia', 'ai', 'mistral', 'créer', 'rédiger', 'résumé', 'générer'],
       icon: AssistantIcon,
-      // Sans lien avec le document ouvert : on part d'une page blanche.
-      run: () => openAssistant(null, null, { text: 'Crée un document sur ', detached: true }),
+      // Un document vide, ouvert, et l'assistant prêt à l'écrire dans le panneau.
+      run: () =>
+        void createDocument().then((id) => {
+          openDocumentRoute(id);
+          openAssistant();
+        }),
     },
     {
       id: 'sample',

@@ -164,6 +164,8 @@ export interface AgentContext {
   docMarkdown: string;
   /** Section où se trouve le curseur. */
   section: string;
+  /** Document encore vide (juste créé) : l'IA l'écrit directement. */
+  empty: boolean;
   /** Ce qui entoure le curseur : là où WRITE écrira. */
   before: string;
   after: string;
@@ -187,7 +189,11 @@ Quand la personne demande de créer, rédiger ou préparer un document (une fich
 
 ${RICH_FORMATS}`;
   }
-  const where = context.section ? ` Le curseur est dans la section « ${context.section} ».` : '';
+  const where = context.empty
+    ? ' Il est vide : quand on te demande un contenu (un document, une fiche, un plan…), écris-le directement dedans avec WRITE, en commençant par « # Titre », plutôt que de créer un autre document.'
+    : context.section
+      ? ` Le curseur est dans la section « ${context.section} ».`
+      : '';
   return `${BASE}
 
 ${documentContext(context.docTitle, context.docMarkdown)}
@@ -226,9 +232,15 @@ const ACTIONS: [string, Action][] = [
  * Action que la demande appelle clairement, d'après sa formulation. Ce n'est qu'un indice
  * donné à l'IA (et un filet si elle oublie d'annoncer son action) : elle garde la main.
  */
-export function actionHint(prompt: string, hasDocument: boolean): 'create' | 'edits' | 'write' | null {
+export function actionHint(
+  prompt: string,
+  hasDocument: boolean,
+  documentEmpty = false,
+): 'create' | 'edits' | 'write' | null {
   const text = prompt.toLowerCase();
   if (/\?\s*$/.test(text)) return null;
+  // Document vide ouvert pour l'occasion : toute demande de contenu s'y écrit.
+  if (hasDocument && documentEmpty) return 'write';
   if (
     /(^|\s)(cré\w*|crée\w*|nouveau|nouvelle|génère\w*|genere\w*|prépare\w*|fais(-moi|\s+moi)?|rédige\w*|écris(-moi|\s+moi)?)\b[^.?!]{0,40}?\b(doc|docs|document|fiche|page|note|carnet|guide|plan)\b(?!\s*(ouvert|actuel))/.test(text) &&
     !/\b(ce|mon|le|du|au|dans (le|mon|ce))\s+(doc|document)\b/.test(text)
