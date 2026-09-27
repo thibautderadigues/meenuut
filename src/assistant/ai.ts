@@ -18,7 +18,11 @@ export interface ChatMessage {
 export type Mode = 'quick' | 'chat';
 
 export class AssistantError extends Error {
-  constructor(readonly code: 'signed-out' | 'rate-limit' | 'network' | 'server') {
+  constructor(
+    readonly code: 'signed-out' | 'rate-limit' | 'network' | 'server',
+    /** Réponse brute du serveur (message de Mistral), affichée en petit pour diagnostiquer. */
+    readonly detail = '',
+  ) {
     super(code);
   }
 }
@@ -58,12 +62,13 @@ export async function* streamReply(
     throw new AssistantError(navigator.onLine ? 'server' : 'network');
   }
   if (!response.ok) {
-    // Détail de Mistral dans la console, pour comprendre un refus.
-    console.error('Assistant', response.status, await response.clone().text());
+    const detail = await response.text();
+    console.error('Assistant', response.status, detail);
+    if (response.status === 401) throw new AssistantError('signed-out', detail);
+    if (response.status === 429) throw new AssistantError('rate-limit', detail);
+    throw new AssistantError('server', `${response.status} ${detail}`);
   }
-  if (response.status === 401) throw new AssistantError('signed-out');
-  if (response.status === 429) throw new AssistantError('rate-limit');
-  if (!response.ok || !response.body) throw new AssistantError('server');
+  if (!response.body) throw new AssistantError('server');
 
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = '';

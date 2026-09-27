@@ -82,6 +82,7 @@ type Message =
       selection?: SelectionContext | null;
       createdId?: string;
       error?: string;
+      errorDetail?: string;
     };
 
 interface AssistantPanelProps {
@@ -260,6 +261,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       if (!controller.signal.aborted) {
         updateMessage(answerId, {
           error: ERROR_MESSAGES[error instanceof AssistantError ? error.code : 'server'],
+          errorDetail: error instanceof AssistantError ? error.detail : String(error),
         });
       }
     } finally {
@@ -455,6 +457,11 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                     )
                   )}
                   {message.error && <p className="text-[13px] text-danger">{message.error}</p>}
+                  {message.errorDetail && (
+                    <p className="mt-1 font-mono text-[10px] break-all text-ink-faint select-text">
+                      {message.errorDetail}
+                    </p>
+                  )}
                   {message.proposal && (
                     <ProposalCard
                       proposal={message.proposal}
