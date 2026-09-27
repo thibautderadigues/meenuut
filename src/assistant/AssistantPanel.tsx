@@ -1,6 +1,8 @@
 import type { Editor } from '@tiptap/react';
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createDocumentWith } from '../db/documents';
+import { insertMarked } from '../editor/aiHighlight';
+import { toMarkdown } from '../lib/markdown';
 import { keys } from '../lib/platform';
 import { openDocumentRoute } from '../lib/router';
 import { IconButton } from '../ui/IconButton';
@@ -15,7 +17,21 @@ import {
   PaperclipIcon,
   StopIcon,
 } from '../ui/icons';
-import { chunks, mockReply, type Proposal } from './mock';
+import {
+  AssistantError,
+  chatSystem,
+  CREATE_PATTERN,
+  CREATE_SYSTEM,
+  ERROR_MESSAGES,
+  markdownToContent,
+  markdownToHtml,
+  REWRITE_PATTERN,
+  REWRITE_SYSTEM,
+  splitTitle,
+  streamReply,
+  type ChatMessage,
+  type Proposal,
+} from './ai';
 import {
   clearSelectionContext,
   closeAssistant,
@@ -65,6 +81,7 @@ type Message =
       /** Passage visé par une proposition de remplacement. */
       selection?: SelectionContext | null;
       createdId?: string;
+      error?: string;
     };
 
 interface AssistantPanelProps {
@@ -73,10 +90,12 @@ interface AssistantPanelProps {
   docTitle: string;
 }
 
-const STREAM_INTERVAL_MS = 16;
-/** Temps de « réflexion » simulé avant la réponse. */
-const THINKING_MS = 1100;
 let messageCount = 0;
+/** Derniers échanges renvoyés à l'IA : au-delà, l'historique coûte sans beaucoup aider. */
+const HISTORY_LENGTH = 12;
+
+const quoted = (selection: SelectionContext | null | undefined) =>
+  selection ? `Passage sélectionné dans le document :\n« ${selection.text} »\n\n` : '';
 
 const SELECTION_SUGGESTIONS = ['Reformule ce passage', 'Raccourcis-le', 'Corrige les fautes', 'Explique-moi ce passage', 'Traduis en anglais'];
 const DOC_SUGGESTIONS = ['Résume ce document', 'Quels sont les points clés ?', 'Crée un doc sur mes idées de projet'];
@@ -101,7 +120,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const streamTimer = useRef<number | undefined>(undefined);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Un passage d'un autre document ne vaut plus comme contexte.
   const selection = pendingSelection?.docId === docId ? pendingSelection : null;
@@ -130,7 +149,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
   }, [messages]);
 
-  useEffect(() => () => window.clearInterval(streamTimer.current), []);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   // Le champ grandit avec le texte, jusqu'à une limite.
   useEffect(() => {
@@ -147,18 +166,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       ),
     );
 
-  const stop = () => {
-    window.clearInterval(streamTimer.current);
-    window.clearTimeout(streamTimer.current);
-    setStreaming(false);
-    setMessages((list) =>
-      list.map((message) =>
-        message.role === 'assistant' && message.streaming
-          ? { ...message, thinking: false, streaming: false, proposal: undefined }
-          : message,
-      ),
-    );
-  };
+  const stop = () => abortRef.current?.abort();
 
   const addFiles = (list: FileList | File[] | null) => {
     const added = Array.from(list ?? []).map((file): Attachment => {
@@ -177,54 +185,88 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     inputRef.current?.focus();
   };
 
-  const send = (text: string) => {
+  const send = async (text: string) => {
     const prompt = text.trim() || (files.length ? 'Que contiennent ces fichiers ?' : '');
     if (!prompt || streaming) return;
 
-    const headings: string[] = [];
-    editor?.state.doc.descendants((node) => {
-      if (node.type.name === 'heading') headings.push(node.textContent);
-    });
-    const reply = mockReply({
-      prompt,
-      selection: selection?.text ?? null,
-      attachments: files,
-      docTitle,
-      headings,
-      wordCount: (editor?.storage.characterCount.words() as number | undefined) ?? 0,
-    });
+    const target = selection;
+    // Réécriture d'un passage → proposition de remplacement ; « crée un doc… » → nouveau document.
+    const intent = target && REWRITE_PATTERN.test(prompt) ? 'rewrite' : CREATE_PATTERN.test(prompt) ? 'create' : 'chat';
+    const fileNote = files.length
+      ? `\n\n[Fichiers joints, que l’assistant ne sait pas encore lire : ${files.map((file) => file.name).join(', ')}]`
+      : '';
+
+    let request: ChatMessage[];
+    if (intent === 'rewrite' && target) {
+      request = [
+        { role: 'system', content: REWRITE_SYSTEM },
+        { role: 'user', content: `Consigne : ${prompt}\n\nPassage :\n${target.text}` },
+      ];
+    } else {
+      const history = messages.slice(-HISTORY_LENGTH).flatMap((message): ChatMessage[] => {
+        if (message.role === 'user') return [{ role: 'user', content: quoted(message.quote) + message.text }];
+        const content = message.text || (message.proposal?.kind === 'replace' ? message.proposal.replacement : '');
+        return content ? [{ role: 'assistant', content }] : [];
+      });
+      const system =
+        intent === 'create'
+          ? CREATE_SYSTEM
+          : chatSystem(docTitle, editor ? toMarkdown(docTitle, editor.getJSON()) : '');
+      request = [
+        { role: 'system', content: system },
+        ...history,
+        { role: 'user', content: quoted(target) + prompt + fileNote },
+      ];
+    }
 
     const answerId = ++messageCount;
     setMessages((list) => [
       ...list,
-      { id: ++messageCount, role: 'user', text: prompt, quote: selection, files },
-      { id: answerId, role: 'assistant', text: '', thinking: true, streaming: true, selection },
+      { id: ++messageCount, role: 'user', text: prompt, quote: target, files },
+      { id: answerId, role: 'assistant', text: '', thinking: true, streaming: true, selection: target },
     ]);
     setDraft('');
     clearSelectionContext();
     setFiles([]);
     setStreaming(true);
 
-    const parts = chunks(reply.text);
+    const controller = new AbortController();
+    abortRef.current = controller;
     let written = '';
-    const write = () => {
-      const next = parts.next();
-      if (next.done) {
-        window.clearInterval(streamTimer.current);
-        setStreaming(false);
-        updateMessage(answerId, {
-          streaming: false,
-          proposal: reply.proposal,
-          status: reply.proposal ? 'pending' : undefined,
-        });
-        return;
+    try {
+      for await (const chunk of streamReply(request, intent === 'rewrite' ? 'quick' : 'chat', controller.signal)) {
+        written += chunk;
+        if (intent === 'rewrite' && target) {
+          updateMessage(answerId, {
+            thinking: false,
+            proposal: { kind: 'replace', original: target.text, replacement: written.trim() },
+          });
+        } else {
+          updateMessage(answerId, { thinking: false, text: written });
+        }
       }
-      written += next.value;
-      updateMessage(answerId, { text: written, thinking: false });
-    };
-    streamTimer.current = window.setTimeout(() => {
-      streamTimer.current = window.setInterval(write, STREAM_INTERVAL_MS);
-    }, THINKING_MS);
+      if (controller.signal.aborted) {
+        updateMessage(answerId, { status: intent === 'rewrite' ? 'dismissed' : undefined });
+      } else if (intent === 'rewrite') {
+        updateMessage(answerId, { status: written.trim() ? 'pending' : undefined });
+      } else if (intent === 'create' && written.trim()) {
+        const { title, body } = splitTitle(written);
+        updateMessage(answerId, {
+          proposal: { kind: 'create', title, content: markdownToContent(body), text: body },
+          status: 'pending',
+        });
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        updateMessage(answerId, {
+          error: ERROR_MESSAGES[error instanceof AssistantError ? error.code : 'server'],
+        });
+      }
+    } finally {
+      abortRef.current = null;
+      setStreaming(false);
+      updateMessage(answerId, { thinking: false, streaming: false });
+    }
   };
 
   /** Clic sur un passage cité : on y retourne dans le document, sélectionné. */
@@ -280,18 +322,14 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       updateMessage(message.id, { status: 'stale' });
       return;
     }
-    editor
-      .chain()
-      .focus()
-      .insertContentAt({ from: target.from, to: target.to }, proposal.replacement)
-      .run();
+    insertMarked(editor, proposal.replacement, { from: target.from, to: target.to });
     updateMessage(message.id, { status: 'applied' });
   };
 
   const onInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      send(draft);
+      void send(draft);
     }
   };
 
@@ -336,12 +374,6 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
           <AssistantIcon size={16} />
         </span>
         <h2 className="text-[13px] font-semibold text-ink">{ASSISTANT_NAME}</h2>
-        <span
-          className="rounded-full border border-rule-strong px-1.5 py-px text-[10px] font-medium text-ink-faint"
-          data-tooltip="Réponses simulées : l’IA n’est pas encore branchée"
-        >
-          Aperçu
-        </span>
         <div className="flex-1" />
         {messages.length > 0 && (
           <IconButton
@@ -372,7 +404,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                 <button
                   key={suggestion}
                   type="button"
-                  onClick={() => send(suggestion)}
+                  onClick={() => void send(suggestion)}
                   className="rounded-lg border border-rule px-2.5 py-1.5 text-left text-[13px] text-ink-muted transition-colors duration-100 hover:border-rule-strong hover:bg-canvas hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
                 >
                   {suggestion}
@@ -414,17 +446,16 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                   {message.thinking ? (
                     <Thinking />
                   ) : (
-                    <p className="text-[13px] leading-relaxed whitespace-pre-wrap text-ink">
-                    {message.text}
-                    {message.streaming && (
-                      <span
-                        aria-hidden
-                        className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-ai"
+                    message.text && (
+                      <div
+                        className="assistant-md text-[13px] leading-relaxed text-ink"
+                        // Markdown de l'IA, nettoyé par DOMPurify.
+                        dangerouslySetInnerHTML={{ __html: markdownToHtml(message.text) }}
                       />
-                    )}
-                  </p>
+                    )
                   )}
-                  {message.proposal && message.status && (
+                  {message.error && <p className="text-[13px] text-danger">{message.error}</p>}
+                  {message.proposal && (
                     <ProposalCard
                       proposal={message.proposal}
                       status={message.status}
@@ -437,7 +468,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                       }
                     />
                   )}
-                  {!message.streaming && !message.proposal && (
+                  {!message.streaming && !message.proposal && message.text && (
                     <div className="mt-1.5 flex gap-1 opacity-0 transition-opacity duration-100 group-hover:opacity-100 focus-within:opacity-100 max-md:opacity-100">
                       <SmallAction
                         label="Copier"
@@ -447,7 +478,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                       <SmallAction
                         label="Insérer dans le document"
                         icon={<PlusIcon />}
-                        onClick={() => editor?.chain().focus().insertContent(message.text).run()}
+                        onClick={() => editor && insertMarked(editor, markdownToHtml(message.text))}
                       />
                     </div>
                   )}
@@ -538,7 +569,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                 type="button"
                 aria-label="Envoyer"
                 disabled={!draft.trim() && files.length === 0}
-                onClick={() => send(draft)}
+                onClick={() => void send(draft)}
                 className="grid size-7 shrink-0 place-items-center rounded-lg bg-ai text-white transition-opacity duration-100 disabled:opacity-30"
               >
                 <ArrowUpSendIcon />
@@ -571,7 +602,8 @@ function SmallAction({ label, icon, onClick }: { label: string; icon: ReactNode;
 
 interface ProposalCardProps {
   proposal: Proposal;
-  status: ProposalStatus;
+  /** Absent pendant l'écriture de la proposition : pas encore de boutons. */
+  status?: ProposalStatus;
   onApply: () => void;
   onDismiss: () => void;
   onOpen?: () => void;
@@ -579,6 +611,7 @@ interface ProposalCardProps {
 
 function ProposalCard({ proposal, status, onApply, onDismiss, onOpen }: ProposalCardProps) {
   const settled = status !== 'pending';
+  const writing = status === undefined;
   return (
     <div
       className={`mt-3 overflow-hidden rounded-lg border border-rule-strong bg-canvas transition-opacity duration-150 ${
@@ -605,7 +638,8 @@ function ProposalCard({ proposal, status, onApply, onDismiss, onOpen }: Proposal
       )}
 
       <div className="flex items-center gap-2 border-t border-rule px-3 py-2">
-        {!settled && (
+        {writing && <span className="text-xs text-ink-faint">Rédaction…</span>}
+        {!settled && !writing && (
           <>
             <button
               type="button"
@@ -690,7 +724,7 @@ function FileChip({ file, onRemove }: { file: Attachment; onRemove?: () => void 
   );
 }
 
-/** Passage cité, dans un petit cadre ; un clic y ramène dans le document. */
+/** Extrait cité, dans un petit cadre ; un clic y ramène dans le document. */
 function QuoteBox({ text, onClick }: { text: string; onClick: () => void }) {
   return (
     <button
@@ -700,7 +734,7 @@ function QuoteBox({ text, onClick }: { text: string; onClick: () => void }) {
       className="flex w-full items-start gap-2 rounded-lg bg-surface px-2 py-1.5 text-left text-xs text-ink-muted transition-colors duration-100 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
     >
       <span aria-hidden className="mt-px h-3.5 w-0.5 shrink-0 rounded-full bg-ink-faint/60" />
-      <span className="line-clamp-3">{text.replace(/\s+/g, ' ').trim()}</span>
+      <span className="line-clamp-2">{text.replace(/\s+/g, ' ').trim()}</span>
     </button>
   );
 }

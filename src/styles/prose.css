@@ -1075,3 +1075,25 @@
 .tiptap > * + .pull-quote {
   margin-top: 1.8em;
 }
+
+/* Contenu ajouté par l'assistant : fin contour dans sa teinte, qui s'efface après quelques secondes. */
+.tiptap .ai-inserted {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ai) 7%, transparent);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ai) 45%, transparent);
+  animation: ai-inserted-in 300ms ease-out;
+}
+
+.tiptap .ai-inserted-block {
+  border-radius: 6px;
+  outline: 1.5px solid color-mix(in srgb, var(--ai) 45%, transparent);
+  outline-offset: 4px;
+  animation: ai-inserted-in 300ms ease-out;
+}
+
+@keyframes ai-inserted-in {
+  from {
+    box-shadow: 0 0 0 1.5px transparent;
+    outline-color: transparent;
+  }
+}

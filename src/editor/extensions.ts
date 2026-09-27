@@ -13,6 +13,7 @@ import {
   type TableOfContentData,
 } from '@tiptap/extension-table-of-contents';
 import { TextAlign } from '@tiptap/extension-text-align';
+import { AiHighlight } from './aiHighlight';
 import { Color, TextStyle } from '@tiptap/extension-text-style';
 import { CharacterCount, Focus, Placeholder } from '@tiptap/extensions';
 import type { Node as PMNode } from '@tiptap/pm/model';
@@ -97,6 +98,7 @@ export function createExtensions(hooks: ExtensionHooks): Extensions {
     Color,
     Subscript,
     Superscript,
+    AiHighlight,
     TextAlign.extend({
       // ⌘⇧R reste au navigateur (rechargement forcé) : pas de raccourci pour aligner à droite.
       addKeyboardShortcuts() {

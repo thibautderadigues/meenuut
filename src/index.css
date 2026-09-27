@@ -243,3 +243,53 @@
   user-select: none !important;
   transition: none !important;
 }
+
+/* Réponses de l'assistant (Markdown rendu) : typographie compacte pour le panneau. */
+.assistant-md > * + * {
+  margin-top: 0.6em;
+}
+.assistant-md :is(h1, h2, h3, h4) {
+  font-weight: 600;
+  font-size: 1em;
+}
+.assistant-md strong {
+  font-weight: 600;
+}
+.assistant-md ul {
+  list-style: disc;
+  padding-left: 1.25em;
+}
+.assistant-md ol {
+  list-style: decimal;
+  padding-left: 1.25em;
+}
+.assistant-md li + li {
+  margin-top: 0.2em;
+}
+.assistant-md a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.assistant-md code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--surface);
+  border-radius: 4px;
+  padding: 0.05em 0.3em;
+}
+.assistant-md pre {
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 0.6em 0.8em;
+  overflow-x: auto;
+}
+.assistant-md pre code {
+  background: none;
+  padding: 0;
+}
+.assistant-md blockquote {
+  border-left: 2px solid var(--rule-strong);
+  padding-left: 0.75em;
+  color: var(--ink-muted);
+}
