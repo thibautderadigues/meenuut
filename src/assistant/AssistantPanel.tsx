@@ -1,6 +1,7 @@
 import type { Editor } from '@tiptap/react';
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { createDocumentWith } from '../db/documents';
+import { createDocumentWith, deleteDocument, latestDocumentId } from '../db/documents';
+import { plainText } from '../lib/sampleDocument';
 import { insertMarked } from '../editor/aiHighlight';
 import {
   acceptSuggestion,
@@ -96,6 +97,8 @@ type Message =
       createdId?: string;
       error?: string;
       errorDetail?: string;
+      /** Pendant la rédaction d'un document : avancement affiché à la place du texte. */
+      progress?: string;
       /** Texte écrit dans le document (suggestion) : repris dans l'historique envoyé à l'IA. */
       written?: string;
     };
@@ -338,6 +341,12 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
             lastPaint = performance.now();
           }
           updateMessage(answerId, { thinking: false });
+        } else if (intent === 'create') {
+          // Pas de pavé dans le panneau : seulement l'avancement.
+          const words = written.split(/\s+/).filter(Boolean).length;
+          updateMessage(answerId, {
+            progress: `Rédaction de « ${splitTitle(written).title} » · ${words} mots`,
+          });
         } else {
           updateMessage(answerId, { thinking: false, text: written });
         }
@@ -350,10 +359,16 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
           status: written.trim() && getPending(editor.state) ? 'pending' : 'dismissed',
         });
       } else if (!controller.signal.aborted && intent === 'create' && written.trim()) {
+        // « Crée » : le document est créé et ouvert tout de suite (annulable depuis le panneau).
         const { title, body } = splitTitle(written);
+        const content = markdownToContent(body);
+        const id = await createDocumentWith({ title, content, text: plainText(content) });
+        openDocumentRoute(id);
         updateMessage(answerId, {
-          proposal: { kind: 'create', title, content: markdownToContent(body), text: body },
-          status: 'pending',
+          written,
+          proposal: { kind: 'create', title, content, text: body },
+          status: 'applied',
+          createdId: id,
         });
       }
     } catch (error) {
@@ -597,7 +612,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
               ) : (
                 <li key={message.id} className="group animate-fade-in px-1">
                   {message.thinking ? (
-                    <Thinking />
+                    <Thinking label={message.progress} />
                   ) : (
                     message.text && (
                       <div
@@ -625,6 +640,18 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                           updateMessage(message.id, { status: 'dismissed' });
                         }
                       }}
+                      onUndo={
+                        message.proposal?.kind === 'create' && message.createdId
+                          ? () => {
+                              const id = message.createdId as string;
+                              updateMessage(message.id, { status: 'dismissed' });
+                              void deleteDocument(id).then(async () => {
+                                // Il était ouvert : on revient au dernier document.
+                                if (id === docId) openDocumentRoute(await latestDocumentId(), { replace: true });
+                              });
+                            }
+                          : undefined
+                      }
                       onShow={
                         message.proposal?.kind === 'inline' && editor
                           ? () => {
@@ -781,9 +808,11 @@ interface ProposalCardProps {
   onOpen?: () => void;
   /** Suggestion dans le document : y aller. */
   onShow?: () => void;
+  /** Document créé : l'envoyer à la corbeille. */
+  onUndo?: () => void;
 }
 
-function ProposalCard({ proposal, status, onApply, onDismiss, onOpen, onShow }: ProposalCardProps) {
+function ProposalCard({ proposal, status, onApply, onDismiss, onOpen, onShow, onUndo }: ProposalCardProps) {
   if (proposal.kind === 'inline') {
     return (
       <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-rule-strong bg-canvas px-3 py-2 text-xs">
@@ -862,7 +891,13 @@ function ProposalCard({ proposal, status, onApply, onDismiss, onOpen, onShow }: 
             <FileIcon />
             {proposal.title}
           </p>
-          <p className="mt-1 text-xs text-ink-faint">{proposal.text.split('\n\n').join(' · ')}</p>
+          <p className="mt-1 truncate text-xs text-ink-faint">
+            {proposal.text
+              .split('\n')
+              .filter((line) => /^#{2,3}\s/.test(line))
+              .map((line) => line.replace(/^#+\s*/, ''))
+              .join(' · ') || `${proposal.text.split(/\s+/).filter(Boolean).length} mots`}
+          </p>
         </div>
       )}
 
@@ -900,9 +935,22 @@ function ProposalCard({ proposal, status, onApply, onDismiss, onOpen, onShow }: 
                 Ouvrir
               </button>
             )}
+            {onUndo && (
+              <button
+                type="button"
+                onClick={onUndo}
+                className="rounded-md px-2 py-1 text-xs text-ink-muted hover:bg-surface hover:text-danger"
+              >
+                Annuler
+              </button>
+            )}
           </>
         )}
-        {status === 'dismissed' && <span className="text-xs text-ink-faint">Ignoré</span>}
+        {status === 'dismissed' && (
+          <span className="text-xs text-ink-faint">
+            {proposal.kind === 'create' ? 'Annulé · document mis à la corbeille' : 'Ignoré'}
+          </span>
+        )}
         {status === 'stale' && (
           <span className="text-xs text-danger">Le passage a changé depuis : rien n’a été modifié.</span>
         )}
@@ -969,14 +1017,14 @@ function QuoteBox({ text, onClick }: { text: string; onClick: () => void }) {
 }
 
 /** Pendant la réflexion : les bandes du logo s'allument tour à tour, le mot scintille. */
-function Thinking() {
+function Thinking({ label = 'Réflexion…' }: { label?: string }) {
   return (
     <p role="status" className="flex items-center gap-2 py-0.5 text-[13px]">
       <span className="text-ai">
         <AssistantIcon size={14} thinking />
       </span>
       <span className="animate-shimmer bg-[linear-gradient(90deg,var(--ink-faint)_0%,var(--ink-faint)_40%,var(--ink)_50%,var(--ink-faint)_60%,var(--ink-faint)_100%)] bg-[length:200%_100%] bg-clip-text text-transparent">
-        Réflexion…
+        {label}
       </span>
     </p>
   );
