@@ -1,5 +1,6 @@
 import type { JSONContent } from '@tiptap/react';
 import Dexie, { type EntityTable } from 'dexie';
+import { itemKey, markPending, SYNCED_TABLES, type SyncedTable } from '../sync/outbox';
 
 /** Métadonnées légères : c'est ce que la sidebar observe. */
 export interface DocMeta {
@@ -58,3 +59,35 @@ db.version(2)
         doc.pinnedAt ??= null;
       }),
   );
+
+/** Transactions qui appliquent des changements venus du serveur : rien à renvoyer. */
+export const remoteTransactions = new WeakSet<object>();
+
+// Toute écriture locale met l'élément en file d'envoi. Marqué dès la requête, avant la fin
+// de la transaction : une lecture ultérieure (l'envoi) attend de toute façon qu'elle se termine.
+db.use({
+  stack: 'dbcore',
+  name: 'outbox',
+  create: (down) => ({
+    ...down,
+    table(name) {
+      const table = down.table(name);
+      if (!SYNCED_TABLES.includes(name)) return table;
+      return {
+        ...table,
+        mutate(req) {
+          if (!remoteTransactions.has(req.trans)) {
+            const ids =
+              req.type === 'delete'
+                ? req.keys
+                : req.type === 'deleteRange'
+                  ? []
+                  : req.values.map((value: { id: string }) => value.id);
+            markPending(ids.map((id) => itemKey(name as SyncedTable, String(id))));
+          }
+          return table.mutate(req);
+        },
+      };
+    },
+  }),
+});
