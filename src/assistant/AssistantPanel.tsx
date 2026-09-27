@@ -29,6 +29,8 @@ interface Attachment {
   name: string;
   size: number;
   kind: string;
+  /** Aperçu local des images (URL d'objet). */
+  preview?: string;
 }
 
 const ACCEPTED = '.pdf,.ppt,.pptx,.key,.doc,.docx,.txt,.md,.csv,.xls,.xlsx,image/*';
@@ -157,13 +159,19 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     );
   };
 
-  const addFiles = (list: FileList | null) => {
-    const added = Array.from(list ?? []).map((file) => ({
-      id: ++messageCount,
-      name: file.name,
-      size: file.size,
-      kind: fileKind(file.name),
-    }));
+  const addFiles = (list: FileList | File[] | null) => {
+    const added = Array.from(list ?? []).map((file): Attachment => {
+      const image = file.type.startsWith('image/');
+      // Une capture collée s'appelle toujours « image.png » : on lui donne un nom lisible.
+      const pasted = image && /^image\.\w+$/.test(file.name);
+      return {
+        id: ++messageCount,
+        name: pasted ? 'Image collée' : file.name,
+        size: file.size,
+        kind: image ? 'Image' : fileKind(file.name),
+        preview: image ? URL.createObjectURL(file) : undefined,
+      };
+    });
     if (added.length) setFiles((current) => [...current, ...added]);
     inputRef.current?.focus();
   };
@@ -494,6 +502,15 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
               aria-label="Message à Claude"
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={onInputKeyDown}
+              // ⌘V d'une image (capture, copie depuis le navigateur) : jointe à la question.
+              onPaste={(event) => {
+                const images = Array.from(event.clipboardData.files).filter((file) =>
+                  file.type.startsWith('image/'),
+                );
+                if (images.length === 0) return;
+                event.preventDefault();
+                addFiles(images);
+              }}
               className="max-h-40 min-h-7 flex-1 resize-none bg-transparent py-1 text-base text-ink outline-none placeholder:text-ink-faint sm:text-[13px]"
             />
             {streaming ? (
@@ -621,6 +638,23 @@ function ProposalCard({ proposal, status, onApply, onDismiss, onOpen }: Proposal
 }
 
 function FileChip({ file, onRemove }: { file: Attachment; onRemove?: () => void }) {
+  if (file.preview) {
+    return (
+      <span className="group/chip relative block size-14 shrink-0 overflow-hidden rounded-lg border border-rule bg-surface">
+        <img src={file.preview} alt={file.name} className="size-full object-cover" />
+        {onRemove && (
+          <button
+            type="button"
+            aria-label={`Retirer ${file.name}`}
+            onClick={onRemove}
+            className="absolute top-0.5 right-0.5 grid size-4 place-items-center rounded-full bg-ink/70 text-canvas opacity-0 transition-opacity group-hover/chip:opacity-100 focus-visible:opacity-100 max-md:opacity-100 [&_svg]:size-2.5"
+          >
+            <CloseIcon />
+          </button>
+        )}
+      </span>
+    );
+  }
   return (
     <span
       className="flex max-w-full items-center gap-1 rounded-md border border-rule bg-canvas py-0.5 pr-0.5 pl-1.5 text-[11px] text-ink-muted"
