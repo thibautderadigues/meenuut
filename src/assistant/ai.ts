@@ -194,12 +194,16 @@ ${documentContext(context.docTitle, context.docMarkdown)}
 
 Tu peux agir sur ce document.${where} Commence ta réponse par l’une de ces formes :
 1. Répondre (question, explication, avis) : écris directement ta réponse, en Markdown simple.
-2. EDITS: — modifier le document ouvert : corriger, reformuler, compléter ou supprimer des passages existants, ou ajouter un paragraphe à un endroit précis. Puis un objet JSON, sans rien d’autre :
-{"summary":"ce que tu changes, en une phrase","edits":[{"find":"passage exact du document","replace":"nouveau texte"},{"after":"passage exact du document","insert":"nouveau paragraphe en Markdown"}]}
-   - « find » et « after » recopient mot pour mot un passage du document, en texte brut (sans #, **, ==, > ni autre syntaxe Markdown), à l’intérieur d’un seul paragraphe ou titre ; prends une phrase entière pour qu’il soit unique.
-   - « replace » : le nouveau texte de ce passage (gras et italique en Markdown possibles) ; vide pour le supprimer.
-   - « insert » : un ou plusieurs paragraphes ajoutés juste après le paragraphe qui contient « after ».
-   - Une entrée par passage changé ; ne touche pas au reste. Autant d’entrées que nécessaire pour tout faire.
+2. EDITS: — modifier le document ouvert : corriger, reformuler, compléter ou supprimer des passages existants, ou en ajouter après un passage. Sur la même ligne, résume ce que tu changes en une phrase. Puis, pour chaque passage changé, un bloc :
+<<<<<<< AVANT
+passage exact du document
+=======
+nouveau texte
+>>>>>>> APRÈS
+   - AVANT recopie mot pour mot un passage du document, en texte brut (sans #, **, ==, > ni autre syntaxe Markdown) : une phrase, un paragraphe, ou plusieurs paragraphes qui se suivent (un par ligne).
+   - Le nouveau texte peut contenir du Markdown (gras, listes, blocs Meenuut) ; laisse-le vide pour supprimer le passage.
+   - Pour ajouter sans rien changer : recopie le passage dans AVANT, puis dans le nouveau texte le même passage suivi du paragraphe ajouté.
+   - Autant de blocs que nécessaire pour tout faire ; ne touche pas au reste.
 3. WRITE: — écrire un nouveau passage à l’emplacement du curseur, entre « ${context.before || '(début du document)'} » et « ${context.after || '(fin du document)'} ». Puis le passage en Markdown, qui s’intègre dans la suite logique de ce qui précède, sans le répéter, dans le ton du document.
 4. ${CREATE_RULE}
 5. ${QUESTION_RULE}
@@ -218,12 +222,55 @@ const ACTIONS: [string, Action][] = [
   [QUESTION_PREFIX, 'question'],
 ];
 
+/**
+ * Action que la demande appelle clairement, d'après sa formulation. Ce n'est qu'un indice
+ * donné à l'IA (et un filet si elle oublie d'annoncer son action) : elle garde la main.
+ */
+export function actionHint(prompt: string, hasDocument: boolean): 'create' | 'edits' | 'write' | null {
+  const text = prompt.toLowerCase();
+  if (/\?\s*$/.test(text)) return null;
+  if (
+    /(^|\s)(cré\w*|crée\w*|nouveau|nouvelle|génère\w*|genere\w*|prépare\w*|fais(-moi|\s+moi)?|rédige\w*|écris(-moi|\s+moi)?)\b[^.?!]{0,40}?\b(doc|docs|document|fiche|page|note|carnet|guide|plan)\b(?!\s*(ouvert|actuel))/.test(text) &&
+    !/\b(ce|mon|le|du|au|dans (le|mon|ce))\s+(doc|document)\b/.test(text)
+  ) {
+    return 'create';
+  }
+  if (!hasDocument) return null;
+  if (/\b(corrige|modifie|change|remplace|supprime|enlève|retire|améliore|reformule|réécris|réécrire|raccourcis|simplifie|mets à jour|mets-le|harmonise|traduis)\w*/.test(text)) {
+    return 'edits';
+  }
+  if (/^(écris|ecris|rédige|redige|ajoute|continue|poursuis|termine|complète)\b/.test(text)) return 'write';
+  return null;
+}
+
+const HINTS: Record<'create' | 'edits' | 'write', string> = {
+  create: 'Action attendue : CREATE (crée le document, ne le montre pas dans la conversation).',
+  edits: 'Action attendue : EDITS (modifie directement le document ouvert).',
+  write: 'Action attendue : WRITE (écris le passage au curseur).',
+};
+
+/** Rappel ajouté à la demande quand l'action attendue est claire. */
+export function hintNote(hint: ReturnType<typeof actionHint>): string {
+  return hint ? `\n\n(${HINTS[hint]} Commence ta réponse par « ${hint.toUpperCase()}: ».)` : '';
+}
+
 /** Forme de la réponse d'après son début ; null tant qu'on ne peut pas encore trancher. */
-export function detectAction(text: string): Action | null {
-  const head = text.trimStart().replace(/^[*_`#\s]+/, '').toUpperCase();
+export function detectAction(text: string, hint: ReturnType<typeof actionHint> = null): Action | null {
+  const trimmed = text.trimStart();
+  const head = trimmed.replace(/^[*_`#\s]+/, '').toUpperCase();
   for (const [prefix, action] of ACTIONS) if (head.startsWith(prefix)) return action;
   if (ACTIONS.some(([prefix]) => prefix.startsWith(head))) return null;
+  // Préfixe oublié : un document qui commence par son titre, ou des modifications en JSON.
+  if (hint === 'create' && trimmed.startsWith('#')) return 'create';
+  if (hint === 'edits' && /^(```json\s*)?\{/.test(trimmed)) return 'edits';
   return 'answer';
+}
+
+/** Retire la phrase d'accompagnement qu'un modèle ajoute parfois après un document. */
+export function stripChatter(markdown: string): string {
+  return markdown
+    .replace(/\n+(---\s*\n+)?[^\n]*(copier|copie-le|adapter|dis-le-moi|n’hésite|n'hésite)[^\n]*\s*$/i, '')
+    .trim();
 }
 
 /** Le contenu après le préfixe d'action. */
@@ -233,8 +280,30 @@ export function stripAction(text: string): string {
 
 export type EditOp = { find: string; replace: string } | { after: string; insert: string };
 
-/** « EDITS: {…} » → résumé et modifications ; null si le JSON est absent ou invalide. */
+/**
+ * « EDITS: résumé » suivi de blocs AVANT / APRÈS (format robuste, sans échappement),
+ * ou, à défaut, l'ancien format JSON. null si rien d'exploitable.
+ */
 export function parseEdits(text: string): { summary: string; edits: EditOp[] } | null {
+  const blocks = [...text.matchAll(/^<{5,}[^\n]*\n([\s\S]*?)\n?^={5,}[^\n]*\n?([\s\S]*?)\n?^>{5,}[^\n]*$/gm)];
+  if (blocks.length) {
+    const summary = (text.split(/^<{5,}/m)[0] ?? '').replace(/^\s*EDITS:\s*/i, '').trim();
+    const edits = blocks.flatMap((match): EditOp[] => {
+      const before = (match[1] ?? '').trim();
+      const after = (match[2] ?? '').trim();
+      if (!before) return [];
+      // Même passage, suivi d'un ajout : c'est une insertion après ce passage.
+      if (after.startsWith(before) && after.length > before.length && /^\s*\n/.test(after.slice(before.length))) {
+        return [{ after: before, insert: after.slice(before.length).trim() }];
+      }
+      return [{ find: before, replace: after }];
+    });
+    if (edits.length) return { summary, edits };
+  }
+  return parseJsonEdits(text);
+}
+
+function parseJsonEdits(text: string): { summary: string; edits: EditOp[] } | null {
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
   if (start < 0 || end <= start) return null;

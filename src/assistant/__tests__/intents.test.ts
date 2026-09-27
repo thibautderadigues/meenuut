@@ -49,3 +49,52 @@ test.each(['Reformule ce passage', 'Raccourcis-le', 'Corrige les fautes', 'Tradu
   'réécriture d’un extrait : %s',
   (prompt) => expect(REWRITE_PATTERN.test(prompt)).toBe(true),
 );
+
+const { actionHint, stripChatter } = await import('../ai');
+
+test.each([
+  ['Crée un document de test', 'create'],
+  ['Crée un peu un carnet de voyage pour l’Italie', 'create'],
+  ['Fais-moi une fiche de révision', 'create'],
+  ['corrige les directement dans mon document', 'edits'],
+  ['Supprime la dernière phrase', 'edits'],
+  ['Ajoute une conclusion', 'write'],
+  ['Continue le texte', 'write'],
+  ['Résume ce document', null],
+  ['Pourquoi tu as mis ça ?', null],
+  ['Écris-moi un paragraphe dans ce document', 'write'],
+] as const)('indice pour « %s »', (prompt, expected) => expect(actionHint(prompt, true)).toBe(expected));
+
+test('document renvoyé comme réponse', () => {
+  expect(detectAction('# Carnet de voyage\n\nContenu', 'create')).toBe('create');
+  expect(detectAction('# Carnet', null)).toBe('answer');
+  expect(stripChatter('# Titre\n\nTexte.\n\nTu peux copier ce document et l’adapter dans Meenuut.')).toBe('# Titre\n\nTexte.');
+});
+
+test('modifications au format AVANT / APRÈS', () => {
+  const parsed = parseEdits(`EDITS: Corrige une faute et ajoute une phrase.
+<<<<<<< AVANT
+Il sont partis tôt.
+=======
+Ils sont partis tôt.
+>>>>>>> APRÈS
+<<<<<<< AVANT
+Phrase inutile.
+=======
+>>>>>>> APRÈS
+<<<<<<< AVANT
+Fin du voyage.
+=======
+Fin du voyage.
+
+Et un nouveau paragraphe avec des "guillemets".
+>>>>>>> APRÈS`);
+  expect(parsed).toEqual({
+    summary: 'Corrige une faute et ajoute une phrase.',
+    edits: [
+      { find: 'Il sont partis tôt.', replace: 'Ils sont partis tôt.' },
+      { find: 'Phrase inutile.', replace: '' },
+      { after: 'Fin du voyage.', insert: 'Et un nouveau paragraphe avec des "guillemets".' },
+    ],
+  });
+});

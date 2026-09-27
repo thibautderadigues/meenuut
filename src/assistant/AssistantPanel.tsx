@@ -35,7 +35,10 @@ import {
   StopIcon,
 } from '../ui/icons';
 import {
+  actionHint,
   agentSystem,
+  hintNote,
+  stripChatter,
   AssistantError,
   detectAction,
   ERROR_MESSAGES,
@@ -307,6 +310,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       ? `\n\n[Fichiers joints, que l’assistant ne sait pas encore lire : ${files.map((file) => file.name).join(', ')}]`
       : '';
     const useDocument = Boolean(editor && withDocument);
+    const hint = mode === 'agent' ? actionHint(prompt, useDocument) : null;
     const writeRange = editor && useDocument ? insertionRange(editor) : null;
 
     let request: ChatMessage[];
@@ -347,7 +351,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       request = [
         { role: 'system', content: withInstructions(agentSystem(context), instructions.text) },
         ...history,
-        { role: 'user', content: quoted(target) + prompt + fileNote },
+        { role: 'user', content: quoted(target) + prompt + fileNote + hintNote(hint) },
       ];
     }
 
@@ -407,7 +411,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       for await (const chunk of streamReply(request, mode === 'agent' ? 'chat' : 'quick', controller.signal)) {
         written += chunk;
         if (action === null) {
-          action = detectAction(written);
+          action = detectAction(written, hint);
           if (action === null) continue;
           if (action === 'write') {
             if (writeRange) startWriting();
@@ -434,6 +438,11 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
         }
       }
       if (action === null) action = written.trim() ? 'answer' : null;
+      // Filet : un document complet renvoyé comme simple réponse alors qu'on demandait de le créer.
+      if (action === 'answer' && hint === 'create' && /^\s*#\s/.test(written) && written.length > 200) {
+        action = 'create';
+        updateMessage(answerId, { text: '' });
+      }
 
       if (action === 'write' && editor && suggestion) {
         if (body().trim()) writeSuggestion(editor, render(body()), suggestion.id);
@@ -446,7 +455,11 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       } else if (action === 'edits' && editor) {
         const parsed = parseEdits(body());
         if (!parsed) {
-          updateMessage(answerId, { text: 'Je n’ai pas réussi à préparer les modifications. Pouvez-vous reformuler ?', progress: undefined });
+          // Réponse mal formée : on le dit, avec « Réessayer » (souvent suffisant).
+          updateMessage(answerId, {
+            error: 'Les modifications proposées étaient illisibles. Réessayez, ou précisez ce qu’il faut changer.',
+            progress: undefined,
+          });
         } else {
           const { ids, missing } = applyEdits(editor, parsed.edits);
           updateMessage(answerId, {
@@ -460,7 +473,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
         }
       } else if (action === 'create' && !controller.signal.aborted && body().trim()) {
         // Le document est créé et ouvert tout de suite (annulable depuis le panneau).
-        const { title, body: markdown } = splitTitle(body());
+        const { title, body: markdown } = splitTitle(stripChatter(body()));
         const content = markdownToContent(markdown);
         const id = await createDocumentWith({ title, content, text: plainText(content) });
         openDocumentRoute(id);
@@ -497,32 +510,52 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     const ids: number[] = [];
     let missing = 0;
     for (const edit of edits) {
-      if ('find' in edit) {
-        const hit = findText(ed.state.doc, edit.find);
-        if (!hit) {
-          missing++;
-          continue;
-        }
-        if (!edit.replace.trim()) {
-          const range = hit.wholeBlock ? hit.block : hit;
-          ids.push(beginSuggestion(ed, range.from, range.to, 'delete'));
-          continue;
-        }
-        const id = beginSuggestion(ed, hit.from, hit.to, 'inline');
-        writeSuggestion(ed, markdownInlineToHtml(edit.replace.trim()), id);
-        ids.push(id);
-      } else {
-        const hit = findText(ed.state.doc, edit.after);
-        if (!hit) {
-          missing++;
-          continue;
-        }
+      const passage = 'find' in edit ? edit.find : edit.after;
+      const hit = locate(ed, passage);
+      if (!hit) {
+        missing++;
+        continue;
+      }
+      if ('after' in edit) {
         const id = beginSuggestion(ed, hit.block.to, hit.block.to, 'block');
         writeSuggestion(ed, markdownToRichHtml(edit.insert), id);
         ids.push(id);
+        continue;
       }
+      const replacement = edit.replace.trim();
+      if (!replacement) {
+        const range = hit.wholeBlock ? hit.block : hit;
+        ids.push(beginSuggestion(ed, range.from, range.to, 'delete'));
+        continue;
+      }
+      // Plusieurs paragraphes (ou un paragraphe entier réécrit en plusieurs) : on remplace les blocs.
+      if (hit.multiBlock || (hit.wholeBlock && /\n\s*\n|^\s*([-*+]|\d+\.|#{1,3}|>)\s/m.test(replacement))) {
+        const id = beginSuggestion(ed, hit.block.from, hit.block.to, 'block');
+        writeSuggestion(ed, markdownToRichHtml(replacement), id);
+        ids.push(id);
+        continue;
+      }
+      const id = beginSuggestion(ed, hit.from, hit.to, 'inline');
+      writeSuggestion(ed, markdownInlineToHtml(replacement), id);
+      ids.push(id);
     }
     return { ids, missing };
+  };
+
+  /**
+   * Retrouve un passage cité par l'IA : dans un seul paragraphe, sinon sur plusieurs
+   * paragraphes qui se suivent (du premier au dernier ligne cité).
+   */
+  const locate = (ed: Editor, passage: string) => {
+    const single = findText(ed.state.doc, passage);
+    if (single) return { ...single, multiBlock: false };
+    const lines = passage.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+    if (lines.length < 2) return null;
+    const first = findText(ed.state.doc, lines[0] ?? '');
+    const last = findText(ed.state.doc, lines.at(-1) ?? '');
+    if (!first || !last || last.block.to < first.block.from) return null;
+    const block = { from: first.block.from, to: last.block.to };
+    return { from: block.from, to: block.to, wholeBlock: true, block, multiBlock: true };
   };
 
   /** Clic sur un passage cité : on y retourne dans le document, sélectionné. */
