@@ -1,4 +1,4 @@
-import type { Editor } from '@tiptap/react';
+import type { Editor, JSONContent } from '@tiptap/react';
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createDocumentWith, deleteDocument, latestDocumentId, renameDocument } from '../db/documents';
 import { plainText } from '../lib/sampleDocument';
@@ -10,6 +10,7 @@ import {
   findText,
   getPending,
   getPendings,
+  type Pending,
   onSuggestionSettled,
   finishWriting,
   pendingText,
@@ -51,6 +52,8 @@ import {
   parseQuestions,
   REWRITE_PATTERN,
   REWRITE_SYSTEM,
+  reviseSystem,
+  cleanWritten,
   splitTitle,
   streamReply,
   stripAction,
@@ -157,6 +160,19 @@ const EMPTY_DOC_SUGGESTIONS = ['Une fiche de révision sur…', 'Un carnet de vo
 const DOC_SUGGESTIONS = ['Résume ce document', 'Quels sont les points clés ?', 'Continue le texte', 'Écris une conclusion', 'Relis et signale les fautes ?'];
 /** Sans document : conversation libre, ou nouveau document. */
 const FREE_SUGGESTIONS = ['Crée un document sur…', 'Explique-moi simplement…', 'Fais-moi un plan de révision pour…'];
+
+/**
+ * Le document tel qu'il était avant une proposition de l'IA (pour la retoucher sans lui
+ * faire relire, comme une référence, ce qu'elle vient elle-même d'inventer).
+ */
+function documentWithout(editor: Editor, pending: Pending | null): JSONContent {
+  if (!pending) return editor.getJSON();
+  try {
+    return editor.state.doc.replace(pending.from, pending.to, pending.original).toJSON() as JSONContent;
+  } catch {
+    return editor.getJSON();
+  }
+}
 
 /** Dernier titre avant le curseur : la section où l'on se trouve. */
 function currentSection(editor: Editor): string {
@@ -397,9 +413,14 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
 
     let request: ChatMessage[];
     if (mode !== 'agent' && editor) {
-      const passage = mode === 'revise' ? pendingText(editor) : (target?.text ?? '');
+      const passage = mode === 'revise' ? cleanWritten(pendingText(editor)) : (target?.text ?? '');
+      // Retouche d'une proposition : avec le document, pour ne rien inventer ni recopier.
+      const system =
+        mode === 'revise'
+          ? reviseSystem(docTitle, toMarkdown(docTitle, documentWithout(editor, pending)))
+          : REWRITE_SYSTEM;
       request = [
-        { role: 'system', content: withInstructions(REWRITE_SYSTEM, instructions.text) },
+        { role: 'system', content: withInstructions(system, instructions.text) },
         { role: 'user', content: `Consigne : ${prompt}\n\nPassage :\n${passage}` },
       ];
     } else {
@@ -486,7 +507,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       if (small) closeAssistant();
     }
     let action: Action | null = mode === 'agent' ? null : 'write';
-    const body = () => (mode === 'agent' ? stripAction(written) : written);
+    const body = () => (mode === 'agent' ? stripAction(written) : cleanWritten(unwrapFence(written)));
     const render = (markdown: string) =>
       suggestion?.kind === 'inline'
         ? markdown.trim()

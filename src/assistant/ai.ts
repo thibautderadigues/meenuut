@@ -148,6 +148,19 @@ Règles :
 - Reformuler : même idée, formulation plus claire et plus naturelle, longueur proche.
 - Garde la forme de l’extrait (une phrase reste une phrase, une liste reste une liste).`;
 
+/**
+ * Retouche d'un passage que l'IA vient d'écrire dans le document (« plus court »,
+ * « sans parler de X »…) : avec le document sous les yeux, pour rester fidèle à ce qu'il dit.
+ */
+export function reviseSystem(docTitle: string, docMarkdown: string): string {
+  return `${REWRITE_SYSTEM}
+- Ce passage est une proposition que tu as faite pour le document ci-dessous. Suis la consigne, même si elle demande de retirer ou de changer des éléments.
+- N’invente ni fonctionnalités, ni faits, ni chiffres que le document ne mentionne pas ; retire ceux de la proposition qui n’y figurent pas.
+- Ne recopie aucune indication d’emplacement (« fin du document »…) ni commentaire.
+
+${documentContext(docTitle, docMarkdown)}`;
+}
+
 /** Contexte du document ouvert, sans les images (inutiles et coûteuses). */
 function documentContext(docTitle: string, docMarkdown: string): string {
   const MAX = 60_000;
