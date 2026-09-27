@@ -43,6 +43,7 @@ import {
   actionHint,
   agentSystem,
   hintNote,
+  isVagueWrite,
   stripChatter,
   unwrapFence,
   AssistantError,
@@ -412,6 +413,8 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     const useDocument = Boolean(editor && withDocument);
     const emptyDoc = Boolean(editor && editor.state.doc.textContent.trim() === '' && !docTitle.trim());
     const hint = mode === 'agent' ? actionHint(prompt, useDocument, emptyDoc) : null;
+    // Écrire sans sujet dans un document qui a déjà du contenu : on demande d'abord sur quoi.
+    const vague = hint === 'write' && !emptyDoc && isVagueWrite(prompt);
     const writeRange = editor && useDocument ? requestedRange(editor, prompt) : null;
 
     let request: ChatMessage[];
@@ -458,7 +461,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       request = [
         { role: 'system', content: withInstructions(agentSystem(context), instructions.text) },
         ...history,
-        { role: 'user', content: quoted(target) + prompt + fileNote + hintNote(hint) },
+        { role: 'user', content: quoted(target) + prompt + fileNote + hintNote(hint, vague) },
       ];
     }
 
@@ -529,7 +532,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
 
     // Demande d'écriture évidente : le curseur apparaît tout de suite à l'endroit prévu,
     // pendant que l'IA réfléchit. Il est retiré si elle choisit finalement autre chose.
-    const anchored = mode === 'agent' && hint === 'write' && Boolean(writeRange);
+    const anchored = mode === 'agent' && hint === 'write' && !vague && Boolean(writeRange);
     if (anchored) startWriting();
     const dropAnchor = () => {
       if (!anchored || !editor || !suggestion) return;

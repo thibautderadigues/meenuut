@@ -296,8 +296,21 @@ const HINTS: Record<'create' | 'edits' | 'write', string> = {
   write: 'Action attendue : WRITE (écris le passage au curseur).',
 };
 
+/**
+ * « Rajoute un paragraphe », « écris une section »… sans dire sur quoi : plutôt que de laisser
+ * le modèle inventer, on lui fait proposer des sujets tirés du document.
+ */
+export function isVagueWrite(prompt: string): boolean {
+  return /^(r?ajoute[rz]?|écris|ecris|rédige|redige|insère|insere|mets|fais)(-moi|\s+moi)?\s+(un|une|des|deux|trois|quelques)?\s*(petit|petite|court|courte|long|longue|nouveau|nouvelle|autre|bon|beau)?\s*(paragraphe|texte|phrase|section|partie|bloc|truc|chose)s?\b[\s,]*(en bas|en haut|à la fin|a la fin|au début|au debut|ici|en dessous|stp|svp|s'il te plaît|s’il te plaît|merci|\s)*[.!]*\s*$/i.test(
+    prompt.trim(),
+  );
+}
+
 /** Rappel ajouté à la demande quand l'action attendue est claire. */
-export function hintNote(hint: ReturnType<typeof actionHint>): string {
+export function hintNote(hint: ReturnType<typeof actionHint>, vague = false): string {
+  if (vague) {
+    return `\n\n(La demande ne dit pas sur quoi écrire. N’invente pas de sujet : réponds par « ${QUESTION_PREFIX} » avec une question « Sur quoi ? » et 3 ou 4 sujets tirés de ce que le document traite déjà.)`;
+  }
   return hint ? `\n\n(${HINTS[hint]} Commence ta réponse par « ${hint.toUpperCase()}: ».)` : '';
 }
 
@@ -333,6 +346,8 @@ export function stripAction(text: string): string {
  */
 export function cleanWritten(text: string): string {
   return text
+    // « Voici un paragraphe sur… : » en tête : une présentation, pas le texte à insérer.
+    .replace(/^\s*(voici|voilà|voila|ci-dessous)\b[^\n]{0,160}:\s*\n+/i, '')
     .replace(/^\s*\((début|fin|après|avant|emplacement)[^)\n]{0,160}\)\s*\n?/i, '')
     .replace(/^\s*[a-zé]{0,3}\)\s*\n/i, '')
     .replace(/\n?\s*\((début|fin) du document\)\s*$/i, '')

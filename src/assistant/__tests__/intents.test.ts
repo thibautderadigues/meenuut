@@ -136,3 +136,19 @@ test('nom lisible du modèle', () => {
   expect(modelLabel('mistral-medium-latest')).toBe('Mistral Medium');
   expect(modelLabel('open-mistral-nemo')).toBe('Mistral Nemo');
 });
+
+const { isVagueWrite } = await import('../ai');
+
+test.each([
+  ['rajoute un paragraphe', true],
+  ['Rajoute un paragraphe en bas stp', true],
+  ['écris une section', true],
+  ['ajoute un petit texte à la fin', true],
+  ['rajoute un paragraphe sur la synchro', false],
+  ['Écris une conclusion', false],
+  ['ajoute un paragraphe qui résume le document', false],
+] as const)('demande sans sujet : « %s » → %s', (prompt, expected) => expect(isVagueWrite(prompt)).toBe(expected));
+
+test('présentation retirée du texte écrit', () => {
+  expect(cleanWritten('Voici une extension des fonctionnalités :\n\nCollaborer…')).toBe('Collaborer…');
+});
