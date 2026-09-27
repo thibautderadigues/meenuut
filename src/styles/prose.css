@@ -913,8 +913,16 @@
   content: 'Un point essentiel';
 }
 
-/* Encadré sans icône : le bouton ne se montre qu'au survol, pour en ajouter une. */
+/* Encadré sans icône : le texte part du bord, le bouton flotte en haut à droite
+   et ne se montre qu'au survol, pour en ajouter une. */
+.tiptap .callout[data-has-icon='false'] {
+  position: relative;
+}
+
 .tiptap .callout[data-has-icon='false'] .callout-icon {
+  position: absolute;
+  top: 0.8em;
+  right: 0.6em;
   opacity: 0;
   transition: opacity 120ms ease;
 }
