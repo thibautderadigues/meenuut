@@ -4,7 +4,11 @@ import { AssistantIcon } from './AssistantIcon';
 import { ASSISTANT_NAME } from './provider';
 import { toggleAssistant, useAssistant } from './store';
 
-/** Accès à l'assistant depuis la barre d'outils : discret, dans la teinte de l'IA. */
+/**
+ * Accès à l'assistant depuis la barre d'outils. Au repos, le logo est noir (blanc en sombre)
+ * et estompé ; au survol ou panneau ouvert, il retrouve ses couleurs. Un seul logo, teinté
+ * par un filtre : le passage de l'un à l'autre est un fondu, sans changement d'élément.
+ */
 export function AssistantButton() {
   const { open } = useAssistant();
   return (
@@ -13,14 +17,17 @@ export function AssistantButton() {
       shortcut={keys('alt', 'Espace')}
       pressed={open}
       onClick={toggleAssistant}
-      // Discret tant qu'on ne s'en sert pas : noir, estompé ; en couleur au survol ou ouvert.
-      className={
-        open
-          ? 'bg-ai-soft! text-ai!'
-          : 'text-ink! opacity-35 hover:bg-ai-soft! hover:text-ai! hover:opacity-100 focus-visible:opacity-100'
-      }
+      className={`group/ai ${open ? 'bg-ai-soft!' : 'hover:bg-ai-soft!'}`}
     >
-      <AssistantIcon mono={!open} />
+      <span
+        className={`grid transition-[filter,opacity] duration-150 ${
+          open
+            ? ''
+            : 'opacity-40 [filter:grayscale(1)_brightness(0)] group-hover/ai:opacity-100 group-hover/ai:[filter:none] group-focus-visible/ai:opacity-100 group-focus-visible/ai:[filter:none] dark:[filter:grayscale(1)_brightness(0)_invert(1)]'
+        }`}
+      >
+        <AssistantIcon />
+      </span>
     </IconButton>
   );
 }

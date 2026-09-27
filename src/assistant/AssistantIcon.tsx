@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 /**
  * Logo Mistral AI (tracé : Simple Icons, CC0 ; marque de Mistral AI).
  * En couleur, les bandes horizontales reprennent le dégradé de la marque, du jaune au rouge ;
@@ -10,8 +12,6 @@ const PATH =
 const STRIPES = ['#ffd800', '#ffaf00', '#ff8205', '#fa500f', '#e10500'];
 const STRIPE_HEIGHT = (20.571 - 3.429) / STRIPES.length;
 
-let count = 0;
-
 interface AssistantIconProps {
   size?: number;
   mono?: boolean;
@@ -20,6 +20,8 @@ interface AssistantIconProps {
 }
 
 export function AssistantIcon({ size = 16, mono = false, thinking = false, className = '' }: AssistantIconProps) {
+  // Identifiant stable par instance (un nouvel id à chaque rendu faisait clignoter le logo).
+  const clip = `mistral-${useId().replace(/:/g, '')}`;
   if (mono) {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden className={className}>
@@ -27,7 +29,6 @@ export function AssistantIcon({ size = 16, mono = false, thinking = false, class
       </svg>
     );
   }
-  const clip = `mistral-${++count}`;
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className={className}>
       <clipPath id={clip}>
