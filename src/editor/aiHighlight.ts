@@ -25,7 +25,7 @@ export const AiHighlight = Extension.create({
           apply(tr, set) {
             const meta = tr.getMeta(key) as Meta | undefined;
             if (meta === 'clear') return DecorationSet.empty;
-            if (meta) return DecorationSet.create(tr.doc, decorations(tr.doc, meta.from, meta.to));
+            if (meta) return DecorationSet.create(tr.doc, rangeDecorations(tr.doc, meta.from, meta.to));
             return set.map(tr.mapping, tr.doc);
           },
         },
@@ -37,18 +37,25 @@ export const AiHighlight = Extension.create({
   },
 });
 
-function decorations(doc: Parameters<typeof DecorationSet.create>[0], from: number, to: number) {
+/** Contour d'un intervalle : le texte s'il tient dans un paragraphe, sinon chaque bloc. */
+export function rangeDecorations(
+  doc: Parameters<typeof DecorationSet.create>[0],
+  from: number,
+  to: number,
+  inlineClass = 'ai-inserted',
+  blockClass = 'ai-inserted-block',
+) {
   const $from = doc.resolve(from);
   const $to = doc.resolve(to);
   // Dans un seul paragraphe : on entoure le texte. Sur plusieurs blocs : on entoure chaque bloc.
   if ($from.sameParent($to) && $from.parent.isTextblock) {
-    return [Decoration.inline(from, to, { class: 'ai-inserted' })];
+    return [Decoration.inline(from, to, { class: inlineClass })];
   }
   const blocks: Decoration[] = [];
   doc.nodesBetween(from, to, (node, pos) => {
     if (!node.isBlock) return false;
     if (node.isTextblock || node.isAtom || pos >= from) {
-      blocks.push(Decoration.node(pos, pos + node.nodeSize, { class: 'ai-inserted-block' }));
+      blocks.push(Decoration.node(pos, pos + node.nodeSize, { class: blockClass }));
       return false;
     }
     return true;
@@ -60,15 +67,18 @@ function decorations(doc: Parameters<typeof DecorationSet.create>[0], from: numb
  * Insère du contenu (à la place de `range`, ou de la sélection) et le signale par le contour.
  * La taille du document avant/après donne l'étendue réellement insérée.
  */
+/** Contour orange quelques secondes sur un intervalle déjà présent dans le document. */
+export function flashRange(editor: Editor, from: number, to: number) {
+  if (to <= from) return;
+  editor.view.dispatch(editor.state.tr.setMeta(key, { from, to }));
+  window.setTimeout(() => {
+    if (!editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta(key, 'clear'));
+  }, VISIBLE_MS);
+}
+
 export function insertMarked(editor: Editor, content: Content, range?: { from: number; to: number }) {
   const { from, to } = range ?? editor.state.selection;
   const before = editor.state.doc.content.size;
   editor.chain().focus().insertContentAt({ from, to }, content).run();
-  const end = to + (editor.state.doc.content.size - before);
-  if (end <= from) return;
-
-  editor.view.dispatch(editor.state.tr.setMeta(key, { from, to: end }));
-  window.setTimeout(() => {
-    if (!editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta(key, 'clear'));
-  }, VISIBLE_MS);
+  flashRange(editor, from, to + (editor.state.doc.content.size - before));
 }

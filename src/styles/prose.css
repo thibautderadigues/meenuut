@@ -1097,3 +1097,61 @@
     outline-color: transparent;
   }
 }
+
+/* Suggestion de l'assistant en attente (écrite dans le document, pas encore acceptée). */
+.tiptap .ai-pending {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ai) 10%, transparent);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ai) 35%, transparent);
+}
+
+.tiptap .ai-pending-block {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ai) 6%, transparent);
+  box-shadow: -10px 0 0 -8px var(--ai);
+  outline: 1.5px dashed color-mix(in srgb, var(--ai) 40%, transparent);
+  outline-offset: 4px;
+}
+
+.tiptap .ai-pending-bar {
+  display: inline-flex;
+  gap: 4px;
+  margin: 6px 0 6px 6px;
+  vertical-align: middle;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1;
+  user-select: none;
+}
+
+/* Après des blocs : la barre passe sur sa propre ligne. */
+.tiptap > .ai-pending-bar {
+  display: flex;
+  margin: 8px 0 0;
+}
+
+.tiptap .ai-pending-bar button {
+  border-radius: 6px;
+  padding: 5px 9px;
+  cursor: pointer;
+  transition: opacity 100ms ease, background-color 100ms ease;
+}
+
+.tiptap .ai-pending-accept {
+  background: var(--ink);
+  color: var(--canvas);
+  font-weight: 500;
+}
+
+.tiptap .ai-pending-accept:hover {
+  opacity: 0.88;
+}
+
+.tiptap .ai-pending-reject {
+  background: var(--surface);
+  color: var(--ink-muted);
+}
+
+.tiptap .ai-pending-reject:hover {
+  color: var(--ink);
+}

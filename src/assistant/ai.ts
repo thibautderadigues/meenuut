@@ -8,7 +8,9 @@ import { supabase } from '../sync/supabase';
 export type Proposal =
   | { kind: 'replace'; original: string; replacement: string }
   | { kind: 'create'; title: string; content: JSONContent; text: string }
-  | { kind: 'insert'; markdown: string };
+  | { kind: 'insert'; markdown: string }
+  /** Écrit directement dans le document, en attente d'acceptation. */
+  | { kind: 'inline'; mode: 'write' | 'rewrite' };
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';

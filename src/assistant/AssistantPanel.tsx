@@ -2,6 +2,15 @@ import type { Editor } from '@tiptap/react';
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createDocumentWith } from '../db/documents';
 import { insertMarked } from '../editor/aiHighlight';
+import {
+  acceptSuggestion,
+  beginSuggestion,
+  getPending,
+  onSuggestionSettled,
+  pendingText,
+  rejectSuggestion,
+  writeSuggestion,
+} from '../editor/aiSuggestion';
 import { toMarkdown } from '../lib/markdown';
 import { keys } from '../lib/platform';
 import { openDocumentRoute } from '../lib/router';
@@ -69,7 +78,7 @@ function fileKind(name: string): string {
 const fileSize = (bytes: number) =>
   bytes < 1_000_000 ? `${Math.max(1, Math.round(bytes / 1000))} Ko` : `${(bytes / 1_000_000).toFixed(1).replace('.', ',')} Mo`;
 
-type ProposalStatus = 'pending' | 'applied' | 'dismissed' | 'stale';
+type ProposalStatus = 'pending' | 'applied' | 'dismissed' | 'stale' | 'revised';
 
 type Message =
   | { id: number; role: 'user'; text: string; quote: SelectionContext | null; files: Attachment[] }
@@ -87,6 +96,8 @@ type Message =
       createdId?: string;
       error?: string;
       errorDetail?: string;
+      /** Texte écrit dans le document (suggestion) : repris dans l'historique envoyé à l'IA. */
+      written?: string;
     };
 
 interface AssistantPanelProps {
@@ -158,6 +169,21 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  // Suggestion acceptée ou refusée (depuis le texte ou le panneau) : la carte suit.
+  useEffect(
+    () =>
+      onSuggestionSettled((outcome) =>
+        setMessages((list) =>
+          list.map((message) =>
+            message.role === 'assistant' && message.proposal?.kind === 'inline' && message.status === 'pending'
+              ? { ...message, status: outcome === 'accepted' ? 'applied' : 'dismissed' }
+              : message,
+          ),
+        ),
+      ),
+    [],
+  );
+
   // Le champ grandit avec le texte, jusqu'à une limite.
   useEffect(() => {
     const input = inputRef.current;
@@ -192,35 +218,57 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     inputRef.current?.focus();
   };
 
+  /**
+   * Où écrire un nouveau passage : à la place d'une ligne vide si le curseur y est,
+   * sinon juste après le bloc du curseur (jamais au milieu d'une phrase).
+   */
+  const insertionRange = (ed: Editor) => {
+    const { $from } = ed.state.selection;
+    if ($from.depth === 0) return { from: $from.pos, to: $from.pos };
+    const block = $from.node(1);
+    if (block.isTextblock && block.content.size === 0) {
+      return { from: $from.before(1), to: $from.after(1) };
+    }
+    const after = $from.after(1);
+    return { from: after, to: after };
+  };
+
   const send = async (text: string) => {
     const prompt = text.trim() || (files.length ? 'Que contiennent ces fichiers ?' : '');
     if (!prompt || streaming) return;
 
     const target = selection;
-    // Réécriture d'un extrait → remplacement ; « crée un doc… » → nouveau document ;
-    // « écris un paragraphe… » → passage à insérer ; sinon, conversation.
+    const pending = editor ? getPending(editor.state) : null;
+    // Suggestion en attente dans le document : une consigne la réécrit sur place
+    // (une question, elle, reste une conversation). Sinon : réécriture d'un extrait,
+    // nouveau document, passage à écrire, ou conversation.
     const intent =
-      target && REWRITE_PATTERN.test(prompt)
-        ? 'rewrite'
-        : CREATE_PATTERN.test(prompt)
-          ? 'create'
-          : WRITE_PATTERN.test(prompt)
-            ? 'write'
-            : 'chat';
+      pending && !/\?\s*$/.test(prompt) && !CREATE_PATTERN.test(prompt)
+        ? 'revise'
+        : target && REWRITE_PATTERN.test(prompt)
+          ? 'rewrite'
+          : CREATE_PATTERN.test(prompt)
+            ? 'create'
+            : WRITE_PATTERN.test(prompt)
+              ? 'write'
+              : 'chat';
+    const inline = intent === 'write' || intent === 'rewrite' || intent === 'revise';
+    if (inline && !editor) return;
     const fileNote = files.length
       ? `\n\n[Fichiers joints, que l’assistant ne sait pas encore lire : ${files.map((file) => file.name).join(', ')}]`
       : '';
 
     let request: ChatMessage[];
-    if (intent === 'rewrite' && target) {
+    if ((intent === 'rewrite' && target) || (intent === 'revise' && editor)) {
+      const passage = intent === 'revise' && editor ? pendingText(editor) : (target?.text ?? '');
       request = [
         { role: 'system', content: withInstructions(REWRITE_SYSTEM, instructions.text) },
-        { role: 'user', content: `Consigne : ${prompt}\n\nPassage :\n${target.text}` },
+        { role: 'user', content: `Consigne : ${prompt}\n\nPassage :\n${passage}` },
       ];
     } else {
       const history = messages.slice(-HISTORY_LENGTH).flatMap((message): ChatMessage[] => {
         if (message.role === 'user') return [{ role: 'user', content: quoted(message.quote) + message.text }];
-        const content = message.text || (message.proposal?.kind === 'replace' ? message.proposal.replacement : '');
+        const content = message.text || message.written || '';
         return content ? [{ role: 'assistant', content }] : [];
       });
       const docMarkdown = editor ? toMarkdown(docTitle, editor.getJSON()) : '';
@@ -237,11 +285,39 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       ];
     }
 
+    // Suggestion dans le document : ouverte avant la réponse, remplie au fil de l'écriture.
+    const inlineKind = intent === 'rewrite' || (intent === 'revise' && pending?.kind === 'inline') ? 'inline' : 'block';
+    if (editor && intent === 'write') {
+      const { from, to } = insertionRange(editor);
+      beginSuggestion(editor, from, to, 'block');
+    } else if (editor && intent === 'rewrite' && target) {
+      beginSuggestion(editor, target.from, target.to, 'inline');
+    }
+    const render = (markdown: string) =>
+      inlineKind === 'inline'
+        ? markdown.trim()
+          ? [{ type: 'text', text: markdown.trim() }]
+          : ''
+        : markdownToHtml(markdown);
+
     const answerId = ++messageCount;
     setMessages((list) => [
-      ...list,
+      // Une seule suggestion vivante : l'ancienne carte devient une révision.
+      ...list.map((message) =>
+        intent === 'revise' && message.role === 'assistant' && message.proposal?.kind === 'inline' && message.status === 'pending'
+          ? { ...message, status: 'revised' as const }
+          : message,
+      ),
       { id: ++messageCount, role: 'user', text: prompt, quote: target, files },
-      { id: answerId, role: 'assistant', text: '', thinking: true, streaming: true, selection: target },
+      {
+        id: answerId,
+        role: 'assistant',
+        text: '',
+        thinking: true,
+        streaming: true,
+        selection: target,
+        proposal: inline ? { kind: 'inline', mode: intent === 'write' ? 'write' : 'rewrite' } : undefined,
+      },
     ]);
     setDraft('');
     clearSelectionContext();
@@ -251,27 +327,29 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     const controller = new AbortController();
     abortRef.current = controller;
     let written = '';
+    let lastPaint = 0;
     try {
-      for await (const chunk of streamReply(request, intent === 'rewrite' ? 'quick' : 'chat', controller.signal)) {
+      for await (const chunk of streamReply(request, intent === 'chat' || intent === 'create' || intent === 'write' ? 'chat' : 'quick', controller.signal)) {
         written += chunk;
-        if (intent === 'rewrite' && target) {
-          updateMessage(answerId, {
-            thinking: false,
-            proposal: { kind: 'replace', original: target.text, replacement: written.trim() },
-          });
-        } else if (intent === 'write') {
-          updateMessage(answerId, { thinking: false, proposal: { kind: 'insert', markdown: written } });
+        if (inline && editor) {
+          // Écriture en direct dans le document, sans repeindre à chaque morceau.
+          if (performance.now() - lastPaint > 90) {
+            writeSuggestion(editor, render(written));
+            lastPaint = performance.now();
+          }
+          updateMessage(answerId, { thinking: false });
         } else {
           updateMessage(answerId, { thinking: false, text: written });
         }
       }
-      if (controller.signal.aborted) {
+      if (inline && editor) {
+        if (written.trim()) writeSuggestion(editor, render(written));
+        else if (intent !== 'revise') rejectSuggestion(editor);
         updateMessage(answerId, {
-          status: intent === 'rewrite' || intent === 'write' ? 'dismissed' : undefined,
+          written,
+          status: written.trim() && getPending(editor.state) ? 'pending' : 'dismissed',
         });
-      } else if (intent === 'rewrite' || intent === 'write') {
-        updateMessage(answerId, { status: written.trim() ? 'pending' : undefined });
-      } else if (intent === 'create' && written.trim()) {
+      } else if (!controller.signal.aborted && intent === 'create' && written.trim()) {
         const { title, body } = splitTitle(written);
         updateMessage(answerId, {
           proposal: { kind: 'create', title, content: markdownToContent(body), text: body },
@@ -279,10 +357,12 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
         });
       }
     } catch (error) {
+      if (inline && editor && !written.trim() && intent !== 'revise') rejectSuggestion(editor);
       if (!controller.signal.aborted) {
         updateMessage(answerId, {
           error: ERROR_MESSAGES[error instanceof AssistantError ? error.code : 'server'],
           errorDetail: error instanceof AssistantError ? error.detail : String(error),
+          status: inline ? 'dismissed' : undefined,
         });
       }
     } finally {
@@ -322,6 +402,11 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
   const apply = async (message: Extract<Message, { role: 'assistant' }>) => {
     const { proposal } = message;
     if (!proposal) return;
+
+    if (proposal.kind === 'inline') {
+      if (editor) acceptSuggestion(editor);
+      return;
+    }
 
     if (proposal.kind === 'insert') {
       if (!editor) return;
@@ -533,7 +618,21 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                       proposal={message.proposal}
                       status={message.status}
                       onApply={() => void apply(message)}
-                      onDismiss={() => updateMessage(message.id, { status: 'dismissed' })}
+                      onDismiss={() => {
+                        if (message.proposal?.kind === 'inline') {
+                          if (editor) rejectSuggestion(editor);
+                        } else {
+                          updateMessage(message.id, { status: 'dismissed' });
+                        }
+                      }}
+                      onShow={
+                        message.proposal?.kind === 'inline' && editor
+                          ? () => {
+                              const current = getPending(editor.state);
+                              if (current) editor.chain().focus().setTextSelection(current.to).scrollIntoView().run();
+                            }
+                          : undefined
+                      }
                       onOpen={
                         message.createdId
                           ? () => openDocumentRoute(message.createdId as string)
@@ -680,9 +779,57 @@ interface ProposalCardProps {
   onApply: () => void;
   onDismiss: () => void;
   onOpen?: () => void;
+  /** Suggestion dans le document : y aller. */
+  onShow?: () => void;
 }
 
-function ProposalCard({ proposal, status, onApply, onDismiss, onOpen }: ProposalCardProps) {
+function ProposalCard({ proposal, status, onApply, onDismiss, onOpen, onShow }: ProposalCardProps) {
+  if (proposal.kind === 'inline') {
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-rule-strong bg-canvas px-3 py-2 text-xs">
+        <span className="size-1.5 shrink-0 rounded-full bg-ai" aria-hidden />
+        <span className="min-w-0 flex-1 text-ink-muted">
+          {status === undefined
+            ? proposal.mode === 'write'
+              ? 'Écrit dans le document…'
+              : 'Réécrit dans le document…'
+            : status === 'pending'
+              ? 'Dans le document, à valider'
+              : status === 'applied'
+                ? '✓ Accepté'
+                : status === 'revised'
+                  ? 'Remplacé par la version suivante'
+                  : 'Refusé'}
+        </span>
+        {status === 'pending' && (
+          <>
+            {onShow && (
+              <button type="button" onClick={onShow} className="rounded-md px-1.5 py-1 text-ink-muted hover:bg-surface hover:text-ink">
+                Voir
+              </button>
+            )}
+            <button type="button" onClick={onDismiss} className="rounded-md px-2 py-1 text-ink-muted hover:bg-surface hover:text-ink">
+              Refuser
+            </button>
+            <button
+              type="button"
+              onClick={onApply}
+              title="Accepter (⌘↵ dans le texte)"
+              className="rounded-md bg-ink px-2.5 py-1 font-medium text-canvas hover:opacity-90"
+            >
+              Accepter
+            </button>
+          </>
+        )}
+        {status === 'pending' && (
+          <p className="w-full text-[11px] text-ink-faint">
+            Pour la modifier, écrivez ici ce qu’il faut changer (« plus court », « plus drôle »…).
+          </p>
+        )}
+      </div>
+    );
+  }
+
   const settled = status !== 'pending';
   const writing = status === undefined;
   return (
