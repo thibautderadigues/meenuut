@@ -6,6 +6,7 @@ import { StatusBar } from '../chrome/StatusBar';
 import { isEmptyContent, saveBody, type OpenedDocument } from '../db/documents';
 import { isModKey } from '../lib/platform';
 import { useAutosave } from '../lib/useAutosave';
+import { SyncIndicator } from '../sync/SyncIndicator';
 import { BubbleToolbar } from './BubbleToolbar';
 import { BlockHandle } from './BlockHandle';
 import { createExtensions, type MathTarget } from './extensions';
@@ -124,11 +125,16 @@ export function Editor({ doc, title, focusMode, onEditor }: EditorProps) {
         <div
           data-print-hidden
           inert={focusMode}
-          className={`sticky top-0 z-10 -mx-6 border-b border-rule bg-canvas/90 backdrop-blur transition-[opacity,translate] duration-150 sm:-mx-10 ${
+          className={`sticky top-0 z-10 -mx-6 flex items-center border-b border-rule bg-canvas/90 backdrop-blur transition-[opacity,translate] duration-150 sm:-mx-10 ${
             focusMode ? '-translate-y-2 opacity-0' : ''
           }`}
         >
-          <Toolbar editor={editor} onLink={() => setLinkRequest((count) => count + 1)} />
+          <div className="min-w-0 flex-1">
+            <Toolbar editor={editor} onLink={() => setLinkRequest((count) => count + 1)} />
+          </div>
+          <div className="pr-2 sm:pr-3">
+            <SyncIndicator />
+          </div>
         </div>
         <div className="doc-column pt-[6vh]">
           <h1 className="print-title">{title.trim() || 'Sans titre'}</h1>
