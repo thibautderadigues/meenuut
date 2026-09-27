@@ -1,0 +1,1064 @@
+/*
+ * Typographie de l'éditeur.
+ * Tout est en em : les espacements suivent la taille du corps, y compris sur mobile.
+ */
+
+/*
+ * Colonne partagée par le titre et le texte.
+ * 40rem = 40em à 16 px ≈ 80 caractères par ligne en Inter : un peu au-delà des 75 classiques,
+ * au profit de l'aisance (tableaux, code, images).
+ * (Pas de ch : le "0" d'Inter est large, 68ch donnerait ~85 caractères.)
+ */
+.doc-column {
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+.doc-title {
+  display: block;
+  width: 100%;
+  margin-bottom: 0.5rem;
+  padding: 0;
+  overflow: hidden;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  caret-color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: 2rem;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.022em;
+  font-optical-sizing: auto;
+}
+
+.doc-title::placeholder {
+  color: var(--ink-faint);
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  .doc-title {
+    font-size: 1.625rem;
+  }
+}
+
+.tiptap {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.7;
+  letter-spacing: -0.011em; /* approche recommandée par Inter à 16px */
+  font-optical-sizing: auto; /* les titres basculent d'eux-mêmes vers la coupe Display */
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures contextual;
+  hanging-punctuation: first allow-end;
+  overflow-wrap: break-word;
+  caret-color: var(--accent);
+  outline: none;
+}
+
+/* Texte clair sur fond sombre : paraît plus gras, on compense avec l'axe de graisse. */
+[data-theme='dark'] .tiptap {
+  font-weight: 370;
+}
+
+@media (max-width: 640px) {
+  .tiptap {
+    font-size: 1rem;
+    line-height: 1.65;
+  }
+}
+
+/* Rythme vertical */
+
+.tiptap > * + * {
+  margin-top: 0.85em;
+}
+
+.tiptap p {
+  text-wrap: pretty;
+}
+
+/* Titres */
+
+.tiptap :is(h1, h2, h3) {
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.tiptap h1 {
+  font-size: 1.5em;
+  line-height: 1.15;
+  letter-spacing: -0.022em;
+  font-weight: 650;
+}
+
+.tiptap h2 {
+  font-size: 1.25em;
+  line-height: 1.25;
+  letter-spacing: -0.018em;
+}
+
+.tiptap h3 {
+  font-size: 1.1em;
+  line-height: 1.35;
+  letter-spacing: -0.014em;
+}
+
+.tiptap > h1:not(:first-child) {
+  margin-top: 1.4em;
+}
+
+.tiptap > h2:not(:first-child) {
+  margin-top: 1.5em;
+}
+
+.tiptap > h3:not(:first-child) {
+  margin-top: 1.4em;
+}
+
+/* Un titre appartient au contenu qui le suit. */
+.tiptap > :is(h1, h2, h3) + * {
+  margin-top: 0.6em;
+}
+
+/* Marques */
+
+.tiptap strong {
+  font-weight: 600;
+}
+
+.tiptap a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  transition: text-decoration-color 120ms ease;
+}
+
+.tiptap a:hover {
+  text-decoration-color: var(--accent);
+}
+
+.tiptap u {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+.tiptap s {
+  text-decoration-thickness: 1px;
+}
+
+.tiptap code {
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+  font-size: 0.82em;
+  font-variant-ligatures: none;
+  background: var(--surface);
+  border-radius: 0.3em;
+  padding: 0.12em 0.32em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* Listes */
+
+.tiptap :is(ul, ol) {
+  padding-left: 1.5em;
+}
+
+.tiptap ul {
+  list-style: disc;
+}
+
+.tiptap ul ul {
+  list-style: circle;
+}
+
+.tiptap ul ul ul {
+  list-style: square;
+}
+
+.tiptap ol {
+  list-style: decimal;
+}
+
+.tiptap ol ol {
+  list-style: lower-alpha;
+}
+
+.tiptap ol ol ol {
+  list-style: lower-roman;
+}
+
+.tiptap li::marker {
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tiptap li + li,
+.tiptap li > :is(p, ul, ol) + :is(p, ul, ol) {
+  margin-top: 0.3em;
+}
+
+/* Listes de tâches */
+
+.tiptap ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0.1em;
+}
+
+.tiptap ul[data-type='taskList'] > li {
+  display: flex;
+  gap: 0.6em;
+}
+
+.tiptap ul[data-type='taskList'] > li > label {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 1.65em; /* = line-height : centre la case sur la première ligne */
+  user-select: none;
+}
+
+.tiptap ul[data-type='taskList'] > li > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.tiptap ul[data-type='taskList'] > li input[type='checkbox'] {
+  appearance: none;
+  display: grid;
+  place-content: center;
+  width: 0.95em;
+  height: 0.95em;
+  margin: 0;
+  border: 1.5px solid var(--ink-faint);
+  border-radius: 0.25em;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.tiptap ul[data-type='taskList'] > li input[type='checkbox']::after {
+  content: '';
+  width: 0.6em;
+  height: 0.6em;
+  background: var(--canvas);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3.2L13 4.8' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  transform: scale(0);
+  transition: transform 140ms cubic-bezier(0.3, 1.4, 0.6, 1);
+}
+
+.tiptap ul[data-type='taskList'] > li input[type='checkbox']:hover {
+  border-color: var(--ink-muted);
+}
+
+.tiptap ul[data-type='taskList'] > li input[type='checkbox']:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.tiptap ul[data-type='taskList'] > li input[type='checkbox']:checked::after {
+  transform: scale(1);
+}
+
+.tiptap ul[data-type='taskList'] > li input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tiptap li[data-checked='true'] > div > p {
+  color: var(--ink-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--ink-faint);
+  transition: color 150ms ease;
+}
+
+/* Citations */
+
+.tiptap blockquote {
+  padding-left: 0.9em;
+  border-left: 2px solid var(--rule-strong);
+  color: var(--ink-muted);
+}
+
+.tiptap blockquote > * + * {
+  margin-top: 0.6em;
+}
+
+/* Blocs de code */
+
+.tiptap pre {
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+  font-size: 0.8em;
+  line-height: 1.6;
+  white-space: pre;
+  tab-size: 2;
+  overflow-x: auto;
+  background: var(--surface);
+  border-radius: 0.5rem;
+  padding: 0.9em 1.1em;
+}
+
+.tiptap pre code {
+  font-size: inherit;
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+/* Séparateur : zone de clic généreuse, trait fin centré. */
+
+.tiptap hr {
+  height: 1.2em;
+  margin-block: 1.2em;
+  border: none;
+  background: linear-gradient(var(--rule-strong), var(--rule-strong)) center / 100% 1px no-repeat;
+  cursor: default;
+}
+
+.tiptap hr.ProseMirror-selectednode {
+  background-image: linear-gradient(var(--accent), var(--accent));
+}
+
+/* Placeholder */
+
+.tiptap .is-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--ink-faint);
+}
+
+/* Requête du menu slash en cours de saisie ("/tit…") */
+
+.tiptap .suggestion {
+  color: var(--ink-muted);
+}
+
+/* Surlignage (couleur portée par le style inline, en variable CSS) */
+
+.tiptap mark {
+  background: var(--hl-yellow);
+  color: inherit;
+  border-radius: 0.2em;
+  padding: 0.05em 0.12em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.tiptap :is(sub, sup) {
+  font-size: 0.72em;
+  line-height: 0;
+}
+
+/* Tableaux */
+
+.tiptap .tableWrapper {
+  overflow-x: auto;
+  margin-block: 1.2em;
+}
+
+.tiptap table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
+.tiptap :is(td, th) {
+  position: relative;
+  min-width: 5em;
+  padding: 0.45em 0.7em;
+  border: 1px solid var(--rule-strong);
+  vertical-align: top;
+  text-align: left;
+}
+
+.tiptap th {
+  background: var(--surface);
+  font-weight: 600;
+}
+
+.tiptap :is(td, th) > * + * {
+  margin-top: 0.4em;
+}
+
+/* Cellules sélectionnées (glisser sur plusieurs cellules) */
+.tiptap .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent-soft);
+  pointer-events: none;
+}
+
+/* Poignée de redimensionnement des colonnes */
+.tiptap .column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  bottom: -2px;
+  width: 3px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.tiptap.resize-cursor {
+  cursor: col-resize;
+}
+
+/* Images */
+
+.tiptap img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.4rem;
+}
+
+.tiptap [data-resize-handle] {
+  background: var(--accent);
+  border-radius: 999px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.tiptap [data-resize-container]:hover [data-resize-handle],
+.tiptap .ProseMirror-selectednode [data-resize-handle] {
+  opacity: 1;
+}
+
+.tiptap img.ProseMirror-selectednode,
+.tiptap .ProseMirror-selectednode img {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Coloration syntaxique (classes hljs produites par lowlight) */
+
+.tiptap pre .hljs-comment,
+.tiptap pre .hljs-quote {
+  color: var(--code-comment);
+  font-style: italic;
+}
+
+.tiptap pre :is(.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-doctag) {
+  color: var(--code-keyword);
+}
+
+.tiptap pre :is(.hljs-string, .hljs-regexp, .hljs-addition, .hljs-template-tag) {
+  color: var(--code-string);
+}
+
+.tiptap pre :is(.hljs-number, .hljs-symbol, .hljs-bullet) {
+  color: var(--code-number);
+}
+
+.tiptap pre :is(.hljs-title, .hljs-section, .hljs-name, .hljs-selector-id) {
+  color: var(--code-title);
+}
+
+.tiptap pre :is(.hljs-attr, .hljs-attribute, .hljs-variable, .hljs-template-variable, .hljs-property) {
+  color: var(--code-attr);
+}
+
+.tiptap pre :is(.hljs-type, .hljs-built_in, .hljs-class, .hljs-meta, .hljs-selector-class) {
+  color: var(--code-type);
+}
+
+.tiptap pre .hljs-deletion {
+  color: var(--tx-red);
+}
+
+/* Mode focus : le bloc courant reste net, les autres s'estompent. */
+
+.focus-mode .tiptap > * {
+  transition: opacity 180ms ease;
+}
+
+.focus-mode .tiptap.ProseMirror-focused > :not(.has-focus) {
+  opacity: 0.28;
+}
+
+/* Titres : le sommaire y fait défiler sous la barre d'outils collante. */
+.tiptap :is(h1, h2, h3) {
+  scroll-margin-top: 5rem;
+}
+
+/* Rechercher / remplacer */
+
+.tiptap .search-match {
+  background: var(--hl-yellow);
+  border-radius: 0.15em;
+}
+
+.tiptap .search-match-current {
+  background: color-mix(in srgb, var(--accent) 38%, transparent);
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+/* Mentions de documents */
+
+.tiptap .mention a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25em;
+  padding: 0 0.3em 0.05em 0.25em;
+  border-radius: 0.3em;
+  background: var(--accent-soft);
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.tiptap .mention a:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.tiptap .mention-icon {
+  align-self: center;
+  color: var(--accent);
+}
+
+.tiptap .mention-missing a {
+  background: var(--surface);
+  color: var(--ink-faint);
+  text-decoration: line-through;
+  cursor: default;
+}
+
+.tiptap .ProseMirror-selectednode.mention a,
+.tiptap .mention.ProseMirror-selectednode a {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* Blocs dépliables */
+
+.tiptap [data-type='details'] {
+  display: flex;
+  gap: 0.35em;
+}
+
+.tiptap [data-type='details'] > button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.3em;
+  height: 1.65em; /* = interlignage : aligné sur la première ligne */
+  color: var(--ink-faint);
+  border-radius: 0.25em;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+
+.tiptap [data-type='details'] > button:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.tiptap [data-type='details'] > button svg {
+  transition: transform 150ms ease;
+}
+
+.tiptap [data-type='details'].is-open > button svg {
+  transform: rotate(90deg);
+}
+
+.tiptap [data-type='details'] > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.tiptap [data-type='details'] summary {
+  display: block;
+  font-weight: 600;
+  list-style: none;
+}
+
+.tiptap [data-type='detailsContent'] > * + * {
+  margin-top: 0.6em;
+}
+
+.tiptap [data-type='detailsContent'] {
+  margin-top: 0.35em;
+}
+
+.tiptap [data-type='details']:not(.is-open) [data-type='detailsContent'] {
+  display: none;
+}
+
+/* Formules (KaTeX) */
+
+.tiptap .tiptap-mathematics-render {
+  cursor: pointer;
+  border-radius: 0.3em;
+  transition: background-color 120ms ease;
+}
+
+.tiptap .tiptap-mathematics-render--editable:hover {
+  background: var(--surface);
+}
+
+.tiptap .block-math-inner {
+  padding: 0.4em 0;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.tiptap :is(.block-math-error, .inline-math-error) {
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+
+.tiptap .katex {
+  font-size: 1.05em;
+}
+
+/* Poignée de bloc : le fantôme de glissement ne doit pas hériter du mode focus. */
+.tiptap .ProseMirror-hideselection *::selection {
+  background: transparent;
+}
+
+/* ————— Blocs spéciaux ————— */
+
+/* Encadrés : la couleur choisie définit la teinte de l'icône et du fond. */
+.callout,
+.callout-swatch {
+  --tone: var(--tx-blue);
+  --tone-bg: var(--hl-blue);
+}
+
+[data-color='gray']:is(.callout, .callout-swatch) {
+  --tone: var(--ink-muted);
+  --tone-bg: var(--surface);
+}
+
+[data-color='green']:is(.callout, .callout-swatch) {
+  --tone: var(--tx-green);
+  --tone-bg: var(--hl-green);
+}
+
+[data-color='orange']:is(.callout, .callout-swatch) {
+  --tone: var(--tx-orange);
+  --tone-bg: var(--hl-orange);
+}
+
+[data-color='red']:is(.callout, .callout-swatch) {
+  --tone: var(--tx-red);
+  --tone-bg: var(--hl-pink);
+}
+
+[data-color='purple']:is(.callout, .callout-swatch) {
+  --tone: var(--tx-purple);
+  --tone-bg: var(--hl-purple);
+}
+
+/* Pastilles de couleur du sélecteur */
+.callout-swatch {
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone-bg) 70%, var(--canvas));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--tone) 55%, transparent);
+  transition: transform 120ms ease;
+}
+
+.callout-swatch:hover {
+  transform: scale(1.1);
+}
+
+.callout-swatch[aria-checked='true'] {
+  box-shadow:
+    inset 0 0 0 1.5px var(--tone),
+    0 0 0 2px var(--canvas),
+    0 0 0 3.5px var(--tone);
+}
+
+.callout-swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* Encadrés */
+
+.tiptap .callout {
+  display: flex;
+  gap: 0.7em;
+  padding: 0.8em 1em;
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--tone-bg) 45%, var(--canvas));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 14%, transparent);
+}
+
+.tiptap .callout-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.6em;
+  height: 1.7em; /* = interlignage : centrée sur la première ligne */
+  border-radius: 0.4em;
+  color: var(--tone);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.tiptap .callout-icon:hover {
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+}
+
+.tiptap .callout-icon:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.tiptap .callout-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.tiptap :is(.key-points, .column) > * + * {
+  margin-top: 0.6em;
+}
+
+/* Citation mise en avant */
+
+.tiptap .pull-quote {
+  margin-block: 1.8em;
+  padding: 1.1em 1em 1.2em;
+  border-block: 1px solid var(--rule);
+  text-align: center;
+  font-size: 1.3em;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.tiptap .pull-quote::before {
+  content: '“';
+  display: block;
+  height: 0.55em;
+  font-size: 3em;
+  /* Serif : en Inter gras, le guillemet ressemble à deux barres obliques. */
+  font-family: Georgia, 'Times New Roman', serif;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.tiptap .pull-quote > * + * {
+  margin-top: 0.5em;
+}
+
+/* À retenir */
+
+.tiptap .key-points {
+  padding: 0.9em 1.15em 1em;
+  border-radius: 0.75rem;
+  background: var(--surface);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.tiptap .key-points::before {
+  content: 'À retenir';
+  display: block;
+  margin-bottom: 0.45em;
+  font-size: 0.7em;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* Colonnes : la zone de chaque colonne se dessine au survol et à l'édition. */
+
+.tiptap .columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5em;
+}
+
+.tiptap .column {
+  min-width: 0;
+  margin: -0.5em -0.7em;
+  padding: 0.5em 0.7em;
+  border-radius: 0.5rem;
+  transition: box-shadow 120ms ease;
+}
+
+.tiptap .columns:hover .column,
+.tiptap .column:focus-within {
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+@media (max-width: 640px) {
+  .tiptap .columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Étapes : pastilles numérotées reliées par un trait. */
+
+.tiptap ol.steps {
+  list-style: none;
+  padding-left: 0;
+  counter-reset: step;
+}
+
+.tiptap .step {
+  position: relative;
+  padding-left: 2.5em;
+  padding-bottom: 0.9em;
+  counter-increment: step;
+}
+
+.tiptap .step + .step {
+  margin-top: 0;
+}
+
+.tiptap .step::before {
+  content: counter(step);
+  position: absolute;
+  top: 0.12em;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 1.85em;
+  height: 1.85em;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent);
+  font-size: 0.8em;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.tiptap .step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 1.75em;
+  bottom: 0.2em;
+  left: calc(0.74em - 1px);
+  width: 2px;
+  border-radius: 1px;
+  background: var(--rule);
+}
+
+/* Chiffres clés */
+
+.tiptap .metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75em;
+}
+
+.tiptap .metric {
+  padding: 0.85em 1em 0.9em;
+  border-radius: 0.75rem;
+  background: var(--canvas);
+  box-shadow:
+    inset 0 0 0 1px var(--rule),
+    0 1px 2px rgb(0 0 0 / 0.03);
+}
+
+.tiptap .metric > p:first-child {
+  font-size: 1.85em;
+  font-weight: 650;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tiptap .metric > p:last-child {
+  margin-top: 0.3em;
+  font-size: 0.85em;
+  line-height: 1.4;
+  color: var(--ink-muted);
+}
+
+/* Indices dans les blocs spéciaux vides (voir Placeholder dans extensions.ts). */
+.tiptap .metric > p.is-empty:first-child::before {
+  content: 'Chiffre';
+}
+
+.tiptap .metric > p.is-empty:last-child::before {
+  content: 'Libellé';
+}
+
+.tiptap .pull-quote > p.is-empty:only-child::before {
+  content: 'Une phrase qui marque';
+}
+
+.tiptap .column > p.is-empty:only-child::before {
+  content: 'Colonne';
+}
+
+.tiptap .key-points li > p.is-empty::before {
+  content: 'Un point essentiel';
+}
+
+/* Encadré sans icône : le bouton ne se montre qu'au survol, pour en ajouter une. */
+.tiptap .callout[data-has-icon='false'] .callout-icon {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.tiptap .callout[data-has-icon='false']:hover .callout-icon,
+.tiptap .callout[data-has-icon='false'] .callout-icon:focus-visible {
+  opacity: 0.6;
+}
+
+.tiptap .callout-icon .grid {
+  /* Emoji : même boîte que les icônes au trait. */
+  font-size: 1.05em;
+}
+
+/* Chiffres clés : sélecteur du nombre de cartes, au survol ou à l'édition. */
+
+.tiptap .metrics-block {
+  position: relative;
+}
+
+.tiptap .metrics-count {
+  position: absolute;
+  top: -2.1em;
+  right: 0;
+  display: flex;
+  gap: 1px;
+  padding: 2px;
+  border-radius: 0.5rem;
+  background: var(--elevated);
+  box-shadow: var(--popover-shadow), inset 0 0 0 1px var(--rule);
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.tiptap .metrics-block:hover .metrics-count,
+.tiptap .metrics-block:focus-within .metrics-count {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tiptap .metrics-count button {
+  width: 1.7rem;
+  height: 1.5rem;
+  border-radius: 0.35rem;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease;
+}
+
+.tiptap .metrics-count button:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.tiptap .metrics-count button[aria-checked='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.tiptap .metrics-block[data-count='1'] .metrics {
+  grid-template-columns: 1fr;
+}
+
+.tiptap .metrics-block[data-count='2'] .metrics {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.tiptap .metrics-block[data-count='3'] .metrics {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.tiptap .metrics-block[data-count='4'] .metrics {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 640px) {
+  .tiptap .metrics-block .metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Étapes : libellé (1er paragraphe) et description (la suite). */
+
+.tiptap .step > p:first-child {
+  font-weight: 600;
+}
+
+.tiptap .step > * + * {
+  margin-top: 0.15em;
+  color: var(--ink-muted);
+}
+
+.tiptap .step > p.is-empty:first-child::before {
+  content: 'Libellé de l’étape';
+}
+
+.tiptap .step > p.is-empty:nth-child(2)::before {
+  content: 'Description';
+}
+
+/*
+ * Vues React (encadré, chiffres clés) : TipTap place le contenu éditable dans un élément
+ * intermédiaire. display: contents le rend transparent pour la grille et le flex du parent.
+ */
+.tiptap [data-node-view-content-react] {
+  display: contents;
+}
+
+.tiptap .callout-content [data-node-view-content-react] > * + * {
+  margin-top: 0.6em;
+}
+
+.tiptap .callout-content [data-node-view-content-react] > p.is-empty:only-child::before {
+  content: 'Écrivez votre encadré…';
+}
+
+/*
+ * Rythme autour des blocs structurés (fond, bordure, grille) : plus d'air qu'entre deux
+ * paragraphes. Les encadrés qui se suivent restent groupés ; après un titre, l'écart reste court.
+ * (.node-callout, .node-metrics : conteneurs des vues React.)
+ */
+.tiptap > :is(.node-callout, .node-metrics, .columns, .steps, .tableWrapper, pre, [data-type='details'], .key-points) {
+  margin-top: 1.4em;
+}
+
+.tiptap > :is(.node-callout, .node-metrics, .columns, .steps, .tableWrapper, pre, [data-type='details'], .key-points) + * {
+  margin-top: 1.4em;
+}
+
+.tiptap > .node-callout + .node-callout {
+  margin-top: 0.6em;
+}
+
+.tiptap > :is(h1, h2, h3) + :is(.node-callout, .node-metrics, .columns, .steps, .tableWrapper, pre, [data-type='details'], .key-points) {
+  margin-top: 0.6em;
+}
+
+/* La citation mise en avant garde des marges symétriques, quel que soit le bloc précédent. */
+.tiptap > * + .pull-quote {
+  margin-top: 1.8em;
+}

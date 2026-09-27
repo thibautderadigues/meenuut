@@ -1,0 +1,208 @@
+@import 'tailwindcss';
+@import './styles/prose.css';
+@import './styles/print.css';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* Tokens. Blanc et gris neutres, un seul accent : un bleu clair. */
+:root {
+  color-scheme: light;
+  --canvas: #ffffff;
+  --surface: #f4f4f5;
+  --ink: #1c1c1e;
+  --ink-muted: #68686e;
+  --ink-faint: #a3a3a8;
+  --rule: #ededef;
+  --rule-strong: #dcdcdf;
+  --accent: #3b9cf2;
+  --accent-soft: rgb(59 156 242 / 0.12);
+  --elevated: #ffffff;
+  --sidebar: #fafafa;
+  --selection: rgb(59 156 242 / 0.2);
+  --danger: #b42318;
+  --popover-shadow: 0 1px 2px rgb(0 0 0 / 0.03), 0 8px 24px -6px rgb(0 0 0 / 0.1);
+
+  /* Couleurs de texte et de surlignage (valeurs stockées dans les documents : ne pas renommer). */
+  --tx-gray: #7a756d;
+  --tx-red: #d0433a;
+  --tx-orange: #c9660a;
+  --tx-green: #2b8a52;
+  --tx-blue: #2a74c9;
+  --tx-purple: #8150cc;
+  --hl-yellow: #fcefa1;
+  --hl-green: #d4f0c9;
+  --hl-blue: #d3e8fb;
+  --hl-pink: #fbd8e5;
+  --hl-purple: #e6dcfa;
+  --hl-orange: #fddfc0;
+
+  /* Coloration syntaxique */
+  --code-keyword: #b42c8e;
+  --code-string: #3b7d2a;
+  --code-number: #b35c00;
+  --code-comment: #8f8a82;
+  --code-title: #2a6fbf;
+  --code-attr: #9a5b00;
+  --code-type: #7c4dc4;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --canvas: #151514;
+  --surface: #20201e;
+  --ink: #e9e7e2;
+  --ink-muted: #a09c93;
+  --ink-faint: #67645d;
+  --rule: #2a2927;
+  --rule-strong: #3b3a36;
+  --accent: #7cc0ff;
+  --accent-soft: rgb(124 192 255 / 0.13);
+  --elevated: #232322;
+  --sidebar: #1a1a19;
+  --selection: rgb(124 192 255 / 0.26);
+  --danger: #ff8a80;
+  --popover-shadow: 0 0 0 1px rgb(255 255 255 / 0.03), 0 12px 32px -6px rgb(0 0 0 / 0.6);
+
+  --tx-gray: #a5a097;
+  --tx-red: #ff7b72;
+  --tx-orange: #ffa657;
+  --tx-green: #6fd17f;
+  --tx-blue: #79c0ff;
+  --tx-purple: #d2a8ff;
+  --hl-yellow: rgb(250 204 21 / 0.3);
+  --hl-green: rgb(74 222 128 / 0.24);
+  --hl-blue: rgb(96 165 250 / 0.28);
+  --hl-pink: rgb(244 114 182 / 0.26);
+  --hl-purple: rgb(167 139 250 / 0.3);
+  --hl-orange: rgb(251 146 60 / 0.28);
+
+  --code-keyword: #ff7ab2;
+  --code-string: #9ad17d;
+  --code-number: #ffb86b;
+  --code-comment: #7d786f;
+  --code-title: #7cc0ff;
+  --code-attr: #ffcf7a;
+  --code-type: #c9a6ff;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-elevated: var(--elevated);
+  --color-sidebar: var(--sidebar);
+  --shadow-popover: var(--popover-shadow);
+}
+
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', monospace;
+
+  --animate-fade-in: fade-in 150ms ease-out;
+  --animate-pop-in: pop-in 120ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  --animate-toast-in: toast-in 160ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  --animate-tooltip-in: tooltip-in 100ms ease-out;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+  }
+
+  @keyframes tooltip-in {
+    from {
+      opacity: 0;
+      transform: translateY(-2px);
+    }
+  }
+
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+}
+
+@layer base {
+  html {
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-size-adjust: 100%;
+  }
+
+  ::selection {
+    background: var(--selection);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Palette de commandes (<dialog> natif) */
+
+.palette {
+  position: fixed;
+  inset: 0;
+  width: min(36rem, calc(100vw - 2rem));
+  max-width: none;
+  height: fit-content;
+  max-height: none;
+  margin: 14vh auto auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 0.875rem;
+  background: var(--elevated);
+  color: var(--ink);
+  box-shadow: var(--popover-shadow);
+}
+
+.palette[open] {
+  animation: pop-in 140ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.palette::backdrop {
+  background: rgb(0 0 0 / 0.18);
+  animation: fade-in 140ms ease-out;
+}
+
+[data-theme='dark'] .palette::backdrop {
+  background: rgb(0 0 0 / 0.5);
+}
+
+/* Changement de thème : fondu enchaîné court (View Transitions). */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .palette[open],
+  .palette::backdrop {
+    animation: none;
+  }
+}

@@ -1,0 +1,142 @@
+/*
+ * Export PDF : la page imprimée ne garde que le document.
+ * Tout élément d'interface porte data-print-hidden.
+ */
+
+/*
+ * Marges de page à zéro : les en-têtes et pieds de page du navigateur (date, adresse, numéros)
+ * n'ont plus de place et disparaissent. Les marges sont recréées par le padding du contenu,
+ * répété à chaque page grâce à box-decoration-break: clone.
+ */
+@page {
+  size: A4;
+  margin: 0;
+}
+
+.print-title {
+  display: none;
+}
+
+@media print {
+  :root {
+    --canvas: #fff;
+    --ink: #111;
+    --ink-muted: #555;
+    --ink-faint: #888;
+    --surface: #f4f4f2;
+    --rule-strong: #ccc;
+    color-scheme: light;
+  }
+
+  html,
+  body {
+    background: #fff;
+  }
+
+  [data-print-hidden],
+  .doc-title {
+    display: none !important;
+  }
+
+  .print-title {
+    display: block;
+    margin: 0 0 0.6em;
+    font-size: 24pt;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+  }
+
+  /* Colonne pleine largeur : les marges sont celles de @page (pas d'espace pour la sidebar). */
+  [data-print-full] {
+    padding: 20mm 20mm 22mm !important;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  .doc-column {
+    max-width: none;
+    padding-top: 0 !important;
+  }
+
+  .tiptap {
+    font-size: 11pt;
+    line-height: 1.55;
+    font-weight: 400 !important;
+    caret-color: transparent;
+  }
+
+  /* Sauts de page : jamais un titre seul en bas de page, jamais un bloc coupé en deux. */
+  .tiptap :is(h1, h2, h3) {
+    break-after: avoid;
+  }
+
+  .tiptap :is(pre, blockquote, table, img, li, tr) {
+    break-inside: avoid;
+  }
+
+  .tiptap p {
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* Les couleurs de surlignage et de code doivent s'imprimer. */
+  .tiptap :is(mark, pre, code, th) {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Sur papier, l'adresse d'un lien doit rester lisible. */
+  .tiptap a[href^='http']::after {
+    content: ' (' attr(href) ')';
+    font-size: 0.8em;
+    color: var(--ink-muted);
+    word-break: break-all;
+  }
+
+  .focus-mode .tiptap > * {
+    opacity: 1 !important;
+  }
+}
+
+@media print {
+  .tiptap [data-type='details'] > button {
+    display: none;
+  }
+
+  .tiptap .mention a {
+    background: none;
+    padding: 0;
+    text-decoration: underline;
+  }
+}
+
+/*
+ * Sur papier, tous les blocs dépliables sont ouverts. L'extension pose [hidden] sur un bloc replié,
+ * et la base Tailwind impose [hidden] { display: none !important } dans la couche base : un
+ * !important n'est battu que dans sa propre couche, avec un sélecteur plus spécifique.
+ */
+@layer base {
+  @media print {
+    .tiptap [data-type='details'] [data-type='detailsContent'][hidden] {
+      display: block !important;
+    }
+  }
+}
+
+@media print {
+  .tiptap :is(.callout, .key-points, .metric, .step) ,
+  .tiptap .step::before {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    break-inside: avoid;
+  }
+
+  .tiptap .callout-icon {
+    cursor: default;
+  }
+}
