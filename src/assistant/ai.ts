@@ -40,10 +40,20 @@ const RETRIES_ON_SATURATION = 2;
 const RETRY_DELAY_MS = 1500;
 
 /** Réponse de l'IA, morceau par morceau (flux SSE relayé par la fonction Supabase). */
+/** Nom lisible d'un modèle Mistral (« mistral-small-latest » → « Mistral Small »). */
+export function modelLabel(model: string): string {
+  const name = model.replace(/-latest$/, '').replace(/^open-/, '');
+  return name
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
 export async function* streamReply(
   messages: ChatMessage[],
   mode: Mode,
   signal: AbortSignal,
+  options: { temperature?: number; onModel?: (model: string) => void } = {},
 ): AsyncGenerator<string> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -57,7 +67,7 @@ export async function* streamReply(
         apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ messages, mode }),
+      body: JSON.stringify({ messages, mode, temperature: options.temperature }),
       signal,
     });
 
@@ -83,6 +93,8 @@ export async function* streamReply(
     throw new AssistantError('server', `${response.status} ${detail}`);
   }
   if (!response.body) throw new AssistantError('server');
+  const model = response.headers.get('x-model');
+  if (model) options.onModel?.(model);
 
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = '';

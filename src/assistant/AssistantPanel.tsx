@@ -47,6 +47,7 @@ import {
   unwrapFence,
   AssistantError,
   detectAction,
+  modelLabel,
   ERROR_MESSAGES,
   parseEdits,
   parseQuestions,
@@ -134,6 +135,8 @@ type Message =
       suggestionIds?: number[];
       /** Combien ont été acceptées (pour l'état final de la carte). */
       acceptedCount?: number;
+      /** Modèle qui a répondu (affiché en petit). */
+      model?: string;
       /** Pendant la rédaction d'un document : avancement affiché à la place du texte. */
       progress?: string;
       /** Texte écrit dans le document (suggestion) : repris dans l'historique envoyé à l'IA. */
@@ -536,7 +539,13 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     };
 
     try {
-      for await (const chunk of streamReply(request, mode === 'agent' ? 'chat' : 'quick', controller.signal)) {
+      // Peu de « créativité » pour écrire dans un document (moins d'invention),
+      // un peu plus pour rédiger un nouveau document ou discuter.
+      const temperature = mode !== 'agent' ? 0.2 : hint === 'create' ? 0.5 : hint ? 0.25 : 0.4;
+      for await (const chunk of streamReply(request, mode === 'agent' ? 'chat' : 'quick', controller.signal, {
+        temperature,
+        onModel: (model) => updateMessage(answerId, { model }),
+      })) {
         written += chunk;
         if (action === null) {
           action = detectAction(written, hint);
@@ -1058,6 +1067,11 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
                         void send(answer);
                       }}
                     />
+                  )}
+                  {message.model && !message.streaming && (
+                    <p className="mt-1.5 text-[10px] text-ink-faint" data-tooltip="Modèle qui a répondu">
+                      {modelLabel(message.model)}
+                    </p>
                   )}
                   {message.errorDetail && (
                     <p className="mt-1 font-mono text-[10px] break-all text-ink-faint select-text">

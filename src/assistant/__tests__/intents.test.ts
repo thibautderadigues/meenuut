@@ -128,3 +128,11 @@ test('restes d’indications recopiés par le modèle', () => {
   expect(cleanWritten('(après le passage « Intro »)\nTexte.')).toBe('Texte.');
   expect(cleanWritten('Un texte (normal) reste intact.')).toBe('Un texte (normal) reste intact.');
 });
+
+const { modelLabel } = await import('../ai');
+
+test('nom lisible du modèle', () => {
+  expect(modelLabel('mistral-small-latest')).toBe('Mistral Small');
+  expect(modelLabel('mistral-medium-latest')).toBe('Mistral Medium');
+  expect(modelLabel('open-mistral-nemo')).toBe('Mistral Nemo');
+});

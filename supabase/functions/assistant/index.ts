@@ -19,6 +19,8 @@ const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  // Le navigateur peut lire quel modèle a répondu.
+  'Access-Control-Expose-Headers': 'x-model',
 };
 
 const json = (status: number, body: unknown) =>
@@ -50,7 +52,7 @@ Deno.serve(async (req) => {
   const apiKey = Deno.env.get('MISTRAL_API_KEY');
   if (!apiKey) return json(500, { error: 'missing_key' });
 
-  let body: { messages?: ChatMessage[]; mode?: string };
+  let body: { messages?: ChatMessage[]; mode?: string; temperature?: number };
   try {
     body = await req.json();
   } catch {
@@ -70,15 +72,22 @@ Deno.serve(async (req) => {
   }
 
   const models = MODELS[body.mode ?? 'chat'] ?? MODELS.chat;
+  // « Créativité » demandée par l'app : basse pour écrire dans un document (moins d'invention).
+  const temperature =
+    typeof body.temperature === 'number' ? Math.min(1, Math.max(0, body.temperature)) : undefined;
   let upstream: Response | null = null;
+  let answeredBy = '';
   let detail = '';
   for (const model of models) {
     upstream = await fetch('https://api.mistral.ai/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages, stream: true, max_tokens: MAX_TOKENS }),
+      body: JSON.stringify({ model, messages, stream: true, max_tokens: MAX_TOKENS, temperature }),
     });
-    if (upstream.ok) break;
+    if (upstream.ok) {
+      answeredBy = model;
+      break;
+    }
     detail = await upstream.text();
     console.error('Mistral', model, upstream.status, detail);
     // Saturé ou indisponible pour ce plan : modèle suivant. Autre erreur : inutile d'insister.
@@ -96,6 +105,11 @@ Deno.serve(async (req) => {
 
   // Flux SSE de Mistral renvoyé tel quel au navigateur.
   return new Response(upstream.body, {
-    headers: { ...CORS, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+    headers: {
+      ...CORS,
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'x-model': answeredBy,
+    },
   });
 });
