@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { AccountFooter } from '../auth/AccountFooter';
+import { TrashButton } from './Trash';
 import type { DocMeta, Folder } from '../db/db';
 import { searchDocuments } from '../db/documents';
 import { keys } from '../lib/platform';
@@ -152,6 +153,7 @@ export function Sidebar({
         )}
       </nav>
 
+      <TrashButton onNavigate={onNavigate} />
       <AccountFooter />
     </aside>
   );

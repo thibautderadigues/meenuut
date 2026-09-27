@@ -18,6 +18,7 @@ import {
 } from './db/documents';
 import { deleteFolder, listFolders, moveFolder, restoreFolder } from './db/folders';
 import { docLabel, folderPath } from './db/tree';
+import { purgeTrash, RETENTION_DAYS } from './db/trash';
 import { Editor } from './editor/Editor';
 import { exportMarkdown, exportPdf } from './lib/exports';
 import {
@@ -72,6 +73,11 @@ export function App() {
   const assistant = useAssistant();
   const openedId = opened?.meta.id ?? null;
 
+  // Corbeille : ce qui y dort depuis plus de 30 jours est supprimé pour de bon.
+  useEffect(() => {
+    purgeTrash(RETENTION_DAYS).catch((error: unknown) => console.error(error));
+  }, []);
+
   // Route vide ou document introuvable → dernier document modifié.
   useEffect(() => {
     let cancelled = false;
@@ -122,7 +128,7 @@ export function App() {
         if (wasOpen) openDocumentRoute(await latestDocumentId(), { replace: true });
         setToast({
           id: Date.now(),
-          message: `« ${docLabel(snapshot.meta)} » supprimé`,
+          message: `« ${docLabel(snapshot.meta)} » mis à la corbeille`,
           action: {
             label: 'Annuler',
             run: async () => {
@@ -144,8 +150,8 @@ export function App() {
         id: Date.now(),
         message:
           count === 0
-            ? `Dossier « ${name} » supprimé`
-            : `Dossier « ${name} » et ${count} document${count > 1 ? 's' : ''} supprimés`,
+            ? `Dossier « ${name} » mis à la corbeille`
+            : `Dossier « ${name} » et ${count} document${count > 1 ? 's' : ''} mis à la corbeille`,
         action: {
           label: 'Annuler',
           run: async () => {

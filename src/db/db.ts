@@ -14,6 +14,8 @@ export interface DocMeta {
   icon?: string | null;
   createdAt: number;
   updatedAt: number;
+  /** Date de mise à la corbeille ; absent ou null : document actif. */
+  deletedAt?: number | null;
 }
 
 /** Corps du document, lu uniquement pour le document ouvert. */
@@ -32,7 +34,12 @@ export interface Folder {
   /** Icône choisie ("icon:book" ou "emoji:🍳"), absente = icône par défaut. */
   icon?: string | null;
   createdAt: number;
+  /** Date de mise à la corbeille ; absent ou null : dossier actif. */
+  deletedAt?: number | null;
 }
+
+/** Élément actif : ni à la corbeille. */
+export const isActive = (item: { deletedAt?: number | null }) => !item.deletedAt;
 
 export const db = new Dexie('meenuut') as Dexie & {
   docs: EntityTable<DocMeta, 'id'>;

@@ -1,6 +1,6 @@
 import type { JSONContent } from '@tiptap/react';
 import { normalizeForSearch } from '../lib/format';
-import { db, type DocBody, type DocMeta } from './db';
+import { db, isActive, type DocBody, type DocMeta } from './db';
 
 export interface OpenedDocument {
   meta: DocMeta;
@@ -50,7 +50,7 @@ async function insertDocument(
 }
 
 export function listDocuments(): Promise<DocMeta[]> {
-  return db.docs.orderBy('updatedAt').reverse().toArray();
+  return db.docs.orderBy('updatedAt').reverse().filter(isActive).toArray();
 }
 
 export function createDocument(folderId: string | null = null): Promise<string> {
@@ -70,7 +70,7 @@ export function createDocumentWith(initial: {
 export function openDocument(id: string): Promise<OpenedDocument | null> {
   return db.transaction('r', db.docs, db.bodies, async () => {
     const meta = await db.docs.get(id);
-    if (!meta) return null;
+    if (!meta || !isActive(meta)) return null;
     const body = await db.bodies.get(id);
     return { meta, content: body?.content ?? EMPTY_CONTENT };
   });
@@ -82,7 +82,9 @@ export function openDocument(id: string): Promise<OpenedDocument | null> {
  */
 export function latestDocumentId(): Promise<string> {
   return db.transaction('rw', db.docs, db.bodies, async () => {
-    const meta = (await db.docs.orderBy('updatedAt').last()) ?? (await insertDocument());
+    const meta =
+      (await db.docs.orderBy('updatedAt').reverse().filter(isActive).first()) ??
+      (await insertDocument());
     return meta.id;
   });
 }
@@ -112,20 +114,21 @@ export function saveBody(id: string, content: JSONContent, text: string): Promis
   });
 }
 
+/** Met le document à la corbeille (récupérable) ; renvoie de quoi annuler tout de suite. */
 export function deleteDocument(id: string): Promise<DocumentSnapshot | null> {
   return db.transaction('rw', db.docs, db.bodies, async () => {
     const meta = await db.docs.get(id);
-    if (!meta) return null;
+    if (!meta || !isActive(meta)) return null;
     const body = await db.bodies.get(id);
-    await db.docs.delete(id);
-    await db.bodies.delete(id);
+    await db.docs.update(id, { deletedAt: Date.now() });
     return { meta, body };
   });
 }
 
+/** Annule une mise à la corbeille (ou une suppression définitive, avec le corps). */
 export function restoreDocument({ meta, body }: DocumentSnapshot): Promise<void> {
   return db.transaction('rw', db.docs, db.bodies, async () => {
-    await db.docs.put(meta);
+    await db.docs.put({ ...meta, deletedAt: null });
     if (body) await db.bodies.put(body);
   });
 }

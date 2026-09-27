@@ -3,7 +3,7 @@ import type { SuggestionOptions } from '@tiptap/suggestion';
 import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { createElement } from 'react';
-import { db } from '../db/db';
+import { db, isActive } from '../db/db';
 import { createDocument, renameDocument } from '../db/documents';
 import { docLabel } from '../db/tree';
 import { openDocumentRoute } from '../lib/router';
@@ -19,7 +19,7 @@ type MentionItem =
 const LIMIT = 8;
 
 async function findDocuments(query: string): Promise<MentionItem[]> {
-  const docs = await db.docs.orderBy('updatedAt').reverse().toArray();
+  const docs = await db.docs.orderBy('updatedAt').reverse().filter(isActive).toArray();
   const trimmed = query.trim();
   const matches = trimmed
     ? docs
@@ -63,7 +63,10 @@ function renderMentionItem(item: MentionItem) {
 function MentionView({ node }: ReactNodeViewProps) {
   const id = String(node.attrs.id);
   // undefined : chargement ; null : document supprimé.
-  const doc = useLiveQuery(async () => (await db.docs.get(id)) ?? null, [id]);
+  const doc = useLiveQuery(async () => {
+    const found = await db.docs.get(id);
+    return found && isActive(found) ? found : null;
+  }, [id]);
   const label = doc ? docLabel(doc) : String(node.attrs.label ?? '');
   const missing = doc === null;
 

@@ -1,4 +1,4 @@
-import { db, type Folder } from './db';
+import { db, isActive, type Folder } from './db';
 import type { DocumentSnapshot } from './documents';
 
 /** Ce qu'il faut pour annuler la suppression d'un dossier et de tout son contenu. */
@@ -8,7 +8,7 @@ export interface FolderSnapshot {
 }
 
 export function listFolders(): Promise<Folder[]> {
-  return db.folders.toArray();
+  return db.folders.filter(isActive).toArray();
 }
 
 export async function createFolder(parentId: string | null): Promise<string> {
@@ -40,12 +40,16 @@ export function moveFolder(id: string, parentId: string | null): Promise<void> {
   });
 }
 
+/**
+ * Met le dossier à la corbeille avec toute sa descendance (sous-dossiers et documents),
+ * sous une même date : restaurer le dossier restaure tout ce qui est parti avec lui.
+ */
 export function deleteFolder(id: string): Promise<FolderSnapshot | null> {
   return db.transaction('rw', db.folders, db.docs, db.bodies, async () => {
-    const all = await db.folders.toArray();
+    const all = (await db.folders.toArray()).filter(isActive);
     if (!all.some((folder) => folder.id === id)) return null;
 
-    // Le dossier et toute sa descendance.
+    // Le dossier et toute sa descendance active.
     const ids = new Set([id]);
     for (let grew = true; grew; ) {
       grew = false;
@@ -57,13 +61,13 @@ export function deleteFolder(id: string): Promise<FolderSnapshot | null> {
       }
     }
 
-    const metas = await db.docs.where('folderId').anyOf([...ids]).toArray();
-    const docIds = metas.map((meta) => meta.id);
-    const bodies = await db.bodies.bulkGet(docIds);
-
-    await db.folders.bulkDelete([...ids]);
-    await db.docs.bulkDelete(docIds);
-    await db.bodies.bulkDelete(docIds);
+    const metas = (await db.docs.where('folderId').anyOf([...ids]).toArray()).filter(isActive);
+    const bodies = await db.bodies.bulkGet(metas.map((meta) => meta.id));
+    const deletedAt = Date.now();
+    await Promise.all([
+      ...[...ids].map((folderId) => db.folders.update(folderId, { deletedAt })),
+      ...metas.map((meta) => db.docs.update(meta.id, { deletedAt })),
+    ]);
 
     return {
       folders: all.filter((folder) => ids.has(folder.id)),
@@ -74,8 +78,8 @@ export function deleteFolder(id: string): Promise<FolderSnapshot | null> {
 
 export function restoreFolder({ folders, docs }: FolderSnapshot): Promise<void> {
   return db.transaction('rw', db.folders, db.docs, db.bodies, async () => {
-    await db.folders.bulkPut(folders);
-    await db.docs.bulkPut(docs.map((doc) => doc.meta));
+    await db.folders.bulkPut(folders.map((folder) => ({ ...folder, deletedAt: null })));
+    await db.docs.bulkPut(docs.map((doc) => ({ ...doc.meta, deletedAt: null })));
     await db.bodies.bulkPut(docs.flatMap((doc) => (doc.body ? [doc.body] : [])));
   });
 }
