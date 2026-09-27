@@ -38,6 +38,7 @@ import {
   markdownToContent,
   markdownToHtml,
   REWRITE_PATTERN,
+  QUESTION_PREFIX,
   REWRITE_SYSTEM,
   WRITE_PATTERN,
   writeSystem,
@@ -97,6 +98,8 @@ type Message =
       createdId?: string;
       error?: string;
       errorDetail?: string;
+      /** Question posée avant d'écrire : la réponse de la personne relance cette rédaction. */
+      askedFor?: 'write' | 'create';
       /** Pendant la rédaction d'un document : avancement affiché à la place du texte. */
       progress?: string;
       /** Texte écrit dans le document (suggestion) : repris dans l'historique envoyé à l'IA. */
@@ -245,7 +248,10 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     // Suggestion en attente dans le document : une consigne la réécrit sur place
     // (une question, elle, reste une conversation). Sinon : réécriture d'un extrait,
     // nouveau document, passage à écrire, ou conversation.
-    const intent =
+    // Réponse à une question de l'IA (« quel sujet ? ») : on reprend la rédaction demandée.
+    const last = messages.at(-1);
+    const resumed = last?.role === 'assistant' ? last.askedFor : undefined;
+    const detected =
       pending && !/\?\s*$/.test(prompt) && !CREATE_PATTERN.test(prompt)
         ? 'revise'
         : target && REWRITE_PATTERN.test(prompt)
@@ -255,8 +261,18 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
             : WRITE_PATTERN.test(prompt)
               ? 'write'
               : 'chat';
+    const intent = detected === 'chat' && resumed ? resumed : detected;
     const inline = intent === 'write' || intent === 'rewrite' || intent === 'revise';
     if (inline && !editor) return;
+    // Où s'écrira le passage, et ce qui l'entoure : pour qu'il s'intègre à cet endroit précis.
+    const writeRange = intent === 'write' && editor ? insertionRange(editor) : null;
+    const placement = (() => {
+      if (!writeRange || !editor) return '';
+      const { doc } = editor.state;
+      const before = doc.textBetween(Math.max(0, writeRange.from - 600), writeRange.from, '\n').slice(-600).trim();
+      const after = doc.textBetween(writeRange.to, Math.min(doc.content.size, writeRange.to + 300), '\n').slice(0, 300).trim();
+      return `\n\nEmplacement : le passage sera inséré après « ${before || '(début du document)'} » et avant « ${after || '(fin du document)'} ».`;
+    })();
     const fileNote = files.length
       ? `\n\n[Fichiers joints, que l’assistant ne sait pas encore lire : ${files.map((file) => file.name).join(', ')}]`
       : '';
@@ -284,15 +300,14 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       request = [
         { role: 'system', content: withInstructions(system, instructions.text) },
         ...history,
-        { role: 'user', content: quoted(target) + prompt + fileNote },
+        { role: 'user', content: quoted(target) + prompt + placement + fileNote },
       ];
     }
 
     // Suggestion dans le document : ouverte avant la réponse, remplie au fil de l'écriture.
     const inlineKind = intent === 'rewrite' || (intent === 'revise' && pending?.kind === 'inline') ? 'inline' : 'block';
-    if (editor && intent === 'write') {
-      const { from, to } = insertionRange(editor);
-      beginSuggestion(editor, from, to, 'block');
+    if (editor && writeRange) {
+      beginSuggestion(editor, writeRange.from, writeRange.to, 'block');
     } else if (editor && intent === 'rewrite' && target) {
       beginSuggestion(editor, target.from, target.to, 'inline');
     }
@@ -331,9 +346,32 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     abortRef.current = controller;
     let written = '';
     let lastPaint = 0;
+    // Rédaction : l'IA peut d'abord demander une précision (réponse « QUESTION: … »).
+    // On attend les premiers caractères pour savoir s'il s'agit d'une question ou du texte.
+    let asking: boolean | null = intent === 'write' || intent === 'create' ? null : false;
+    const decide = () => {
+      asking = written.trimStart().startsWith(QUESTION_PREFIX);
+      if (!asking) return;
+      if (intent === 'write' && editor) rejectSuggestion(editor);
+      updateMessage(answerId, {
+        proposal: undefined,
+        status: undefined,
+        progress: undefined,
+        askedFor: intent === 'create' ? 'create' : 'write',
+      });
+    };
+    const question = () => written.trimStart().slice(QUESTION_PREFIX.length).trim();
     try {
       for await (const chunk of streamReply(request, intent === 'chat' || intent === 'create' || intent === 'write' ? 'chat' : 'quick', controller.signal)) {
         written += chunk;
+        if (asking === null) {
+          if (written.trimStart().length < QUESTION_PREFIX.length) continue;
+          decide();
+        }
+        if (asking) {
+          updateMessage(answerId, { thinking: false, text: question() });
+          continue;
+        }
         if (inline && editor) {
           // Écriture en direct dans le document, sans repeindre à chaque morceau.
           if (performance.now() - lastPaint > 90) {
@@ -351,7 +389,10 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
           updateMessage(answerId, { thinking: false, text: written });
         }
       }
-      if (inline && editor) {
+      if (asking === null) decide();
+      if (asking) {
+        updateMessage(answerId, { text: question() });
+      } else if (inline && editor) {
         if (written.trim()) writeSuggestion(editor, render(written));
         else if (intent !== 'revise') rejectSuggestion(editor);
         updateMessage(answerId, {

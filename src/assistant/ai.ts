@@ -109,6 +109,11 @@ Principes :
 - Tu ne modifies jamais un document toi-même : la personne applique tes propositions. Ne dis donc pas « j’ai modifié » ou « j’ai créé ».
 - Formats que l’éditeur sait afficher : paragraphes, titres ## et ###, listes à puces ou numérotées, cases à cocher (- [ ]), gras, italique, liens, citations (>), tableaux Markdown, blocs de code. N’utilise ni formules LaTeX ($…$), ni encadrés (> [!NOTE]), ni HTML.`;
 
+/** Préfixe d'une réponse qui demande une précision au lieu d'écrire. */
+export const QUESTION_PREFIX = 'QUESTION:';
+
+const ASK_FIRST = `Si la demande est trop vague pour écrire quelque chose de vraiment utile (sujet, but ou destinataire impossibles à deviner, même avec le document), n’écris rien : réponds uniquement par « ${QUESTION_PREFIX} » suivi d’une ou deux questions courtes pour préciser. Si tu peux raisonnablement deviner, écris directement, sans poser de question.`;
+
 export const REWRITE_SYSTEM = `Tu réécris un extrait de document selon la consigne donnée.
 
 Règles :
@@ -125,7 +130,9 @@ export const CREATE_SYSTEM = `${BASE}
 On te demande de rédiger un nouveau document. Réponds uniquement par le document, en Markdown :
 - première ligne « # Titre » (titre court et parlant) ;
 - des sections « ## » seulement si le sujet le justifie ;
-- du contenu concret et directement utilisable, sans texte de remplissage ni crochets à compléter.`;
+- du contenu concret et directement utilisable, sans texte de remplissage ni crochets à compléter.
+
+${ASK_FIRST}`;
 
 /** Contexte du document ouvert, sans les images (inutiles et coûteuses). */
 export function chatSystem(docTitle: string, docMarkdown: string): string {
@@ -146,7 +153,9 @@ function documentContext(docTitle: string, body: string): string {
 export function writeSystem(docTitle: string, docMarkdown: string): string {
   return `${chatSystem(docTitle, docMarkdown)}
 
-On te demande de rédiger un passage à insérer dans ce document. Réponds UNIQUEMENT par ce passage, prêt à être inséré : pas de préambule, pas de commentaire, pas de titre sauf si on t’en demande un. Écris un vrai texte sur le sujet demandé (ou, faute de sujet, sur celui du document), naturel et concret, dans la langue et le ton du document.`;
+On te demande de rédiger un passage à insérer dans ce document, à l’endroit indiqué. Il doit s’y intégrer naturellement : dans la suite logique de ce qui précède, sans répéter ce qui est déjà écrit, dans la langue et le ton du document. Réponds UNIQUEMENT par ce passage, prêt à être inséré : pas de préambule, pas de commentaire, pas de titre sauf si on t’en demande un. Écris un vrai texte, concret, sur le sujet demandé (ou, faute de sujet, sur celui du document).
+
+${ASK_FIRST}`;
 }
 
 export const REWRITE_PATTERN =
