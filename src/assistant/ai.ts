@@ -135,7 +135,7 @@ const QUESTION_RULE = `QUESTION: — seulement si la demande est trop vague pour
 {"questions":[{"question":"Quel ton ?","options":["Sérieux","Décontracté","Humoristique"],"multiple":false}]}
 1 à 3 questions courtes, 2 à 4 options courtes chacune (pas d’option « Autre » : la personne peut toujours répondre librement) ; "multiple": true si plusieurs réponses se cumulent. Si tu peux raisonnablement deviner, agis directement.`;
 
-const CREATE_RULE = `CREATE: — créer un nouveau document, distinct de celui ouvert. Puis le document en Markdown, en commençant par « # Titre » (court et parlant) : des sections ## si le sujet le justifie, du contenu concret et directement utilisable, sans remplissage ni crochets à compléter.`;
+const CREATE_RULE = `CREATE: — créer un nouveau document, distinct de celui ouvert. Puis le document en Markdown, en commençant par « # Titre » (court et parlant) : des sections ## si le sujet le justifie, du contenu concret et directement utilisable, sans remplissage ni crochets à compléter. N’entoure jamais le document de \`\`\` (ce n’est pas du code) et n’ajoute rien après lui.`;
 
 export const REWRITE_SYSTEM = `Tu réécris un extrait de document selon la consigne donnée.
 
@@ -261,7 +261,7 @@ export function detectAction(text: string, hint: ReturnType<typeof actionHint> =
   for (const [prefix, action] of ACTIONS) if (head.startsWith(prefix)) return action;
   if (ACTIONS.some(([prefix]) => prefix.startsWith(head))) return null;
   // Préfixe oublié : un document qui commence par son titre, ou des modifications en JSON.
-  if (hint === 'create' && trimmed.startsWith('#')) return 'create';
+  if (hint === 'create' && unwrapFence(trimmed).trimStart().startsWith('#')) return 'create';
   if (hint === 'edits' && /^(```json\s*)?\{/.test(trimmed)) return 'edits';
   return 'answer';
 }
@@ -273,9 +273,28 @@ export function stripChatter(markdown: string): string {
     .trim();
 }
 
-/** Le contenu après le préfixe d'action. */
+/** Le contenu après le préfixe d'action, sans l'éventuel bloc de code qui l'entoure. */
 export function stripAction(text: string): string {
-  return text.trimStart().replace(/^[*_`#\s]*(EDITS|WRITE|CREATE|QUESTION):[*_`]*\s*/i, '');
+  return unwrapFence(text.trimStart().replace(/^[*_`#\s]*(EDITS|WRITE|CREATE|QUESTION):[*_`]*\s*/i, ''));
+}
+
+/**
+ * Les modèles entourent souvent un document de ```markdown … ``` : sans ça, l'éditeur
+ * en ferait un bloc de code. Marche aussi pendant l'écriture (clôture pas encore arrivée).
+ * Un vrai bloc de code (```python…) n'est pas touché.
+ */
+export function unwrapFence(text: string): string {
+  const match = /^\s*(`{3,}|~{3,})\s*(markdown|md|mdx|text|txt)?\s*\n/i.exec(text);
+  if (!match) return text;
+  const fence = match[1] ?? '```';
+  const language = match[2];
+  const rest = text.slice(match[0].length);
+  // Sans langue : ce n'est un emballage que si le contenu ressemble à du Markdown.
+  if (!language && !/^\s*(#|[-*]\s|>|\|)/.test(rest)) return text;
+  const closing = rest.lastIndexOf(`\n${fence}`);
+  return closing >= 0 && !rest.slice(closing + fence.length + 1).trim()
+    ? rest.slice(0, closing)
+    : rest.replace(new RegExp(`\\n?${fence}\\s*$`), '');
 }
 
 export type EditOp = { find: string; replace: string } | { after: string; insert: string };

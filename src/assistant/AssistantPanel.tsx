@@ -39,6 +39,7 @@ import {
   agentSystem,
   hintNote,
   stripChatter,
+  unwrapFence,
   AssistantError,
   detectAction,
   ERROR_MESSAGES,
@@ -439,7 +440,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       }
       if (action === null) action = written.trim() ? 'answer' : null;
       // Filet : un document complet renvoyé comme simple réponse alors qu'on demandait de le créer.
-      if (action === 'answer' && hint === 'create' && /^\s*#\s/.test(written) && written.length > 200) {
+      if (action === 'answer' && hint === 'create' && /^\s*#\s/.test(unwrapFence(written)) && written.length > 200) {
         action = 'create';
         updateMessage(answerId, { text: '' });
       }
@@ -518,11 +519,11 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
       }
       if ('after' in edit) {
         const id = beginSuggestion(ed, hit.block.to, hit.block.to, 'block');
-        writeSuggestion(ed, markdownToRichHtml(edit.insert), id);
+        writeSuggestion(ed, markdownToRichHtml(unwrapFence(edit.insert)), id);
         ids.push(id);
         continue;
       }
-      const replacement = edit.replace.trim();
+      const replacement = unwrapFence(edit.replace).trim();
       if (!replacement) {
         const range = hit.wholeBlock ? hit.block : hit;
         ids.push(beginSuggestion(ed, range.from, range.to, 'delete'));

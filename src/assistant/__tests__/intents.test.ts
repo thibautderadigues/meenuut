@@ -98,3 +98,14 @@ Et un nouveau paragraphe avec des "guillemets".
     ],
   });
 });
+
+const { unwrapFence } = await import('../ai');
+
+test('document entouré de ```markdown', () => {
+  expect(stripAction('CREATE:\n```markdown\n# Carnet\n\nTexte.\n```')).toBe('# Carnet\n\nTexte.');
+  expect(stripAction('CREATE: ```md\n# Carnet\n\nEn cours')).toBe('# Carnet\n\nEn cours');
+  expect(unwrapFence('```\n# Titre\n\n- a\n```\n')).toBe('# Titre\n\n- a');
+  // Un vrai bloc de code reste un bloc de code.
+  expect(unwrapFence('```python\nprint(1)\n```')).toBe('```python\nprint(1)\n```');
+  expect(unwrapFence('# Titre\n\n```js\nx()\n```')).toBe('# Titre\n\n```js\nx()\n```');
+});
