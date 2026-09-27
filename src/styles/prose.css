@@ -1076,25 +1076,38 @@
   margin-top: 1.8em;
 }
 
-/* Contenu ajouté par l'assistant : fin contour dans sa teinte, qui s'efface après quelques secondes. */
+/* Contenu tout juste ajouté par l'assistant : un léger fond chaud qui s'efface doucement,
+   sans contour (le temps de repérer ce qui est nouveau, puis plus rien). */
 .tiptap .ai-inserted {
   border-radius: 3px;
-  background: color-mix(in srgb, var(--ai) 7%, transparent);
-  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ai) 45%, transparent);
-  animation: ai-inserted-in 300ms ease-out;
+  animation: ai-fade 2.6s ease-out forwards;
 }
 
 .tiptap .ai-inserted-block {
   border-radius: 6px;
-  outline: 1.5px solid color-mix(in srgb, var(--ai) 45%, transparent);
-  outline-offset: 4px;
-  animation: ai-inserted-in 300ms ease-out;
+  animation: ai-fade-block 2.6s ease-out forwards;
 }
 
-@keyframes ai-inserted-in {
-  from {
-    box-shadow: 0 0 0 1.5px transparent;
-    outline-color: transparent;
+@keyframes ai-fade {
+  0%,
+  25% {
+    background-color: color-mix(in srgb, var(--ai) 14%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+/* Le fond déborde un peu du bloc (ombre pleine) pour ne pas coller au texte. */
+@keyframes ai-fade-block {
+  0%,
+  25% {
+    background-color: color-mix(in srgb, var(--ai) 9%, transparent);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--ai) 9%, transparent);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 6px transparent;
   }
 }
 

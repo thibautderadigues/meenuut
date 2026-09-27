@@ -4,12 +4,13 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
 /**
- * Texte ajouté par l'assistant : un fin contour dans sa teinte, le temps de le repérer.
- * Il suit les modifications du document et disparaît au bout de quelques secondes.
+ * Texte ajouté par l'assistant : un léger fond dans sa teinte qui s'efface, le temps de le
+ * repérer. Il suit les modifications du document pendant ces quelques secondes.
  */
 
 const key = new PluginKey<DecorationSet>('aiHighlight');
-const VISIBLE_MS = 6000;
+/** Durée de l'animation d'effacement (prose.css), un peu plus pour qu'elle aille au bout. */
+const VISIBLE_MS = 2800;
 
 type Meta = { from: number; to: number } | 'clear';
 
