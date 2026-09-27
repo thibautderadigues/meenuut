@@ -186,6 +186,17 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const instructions = usePersonalInstructions();
+  // Document vide ou non, suivi en direct (le panneau ne se redessine pas à chaque frappe).
+  const [editorEmpty, setEditorEmpty] = useState(() => editor?.isEmpty ?? true);
+  useEffect(() => {
+    if (!editor) return;
+    const update = () => setEditorEmpty(editor.isEmpty);
+    update();
+    editor.on('update', update);
+    return () => {
+      editor.off('update', update);
+    };
+  }, [editor]);
   // Document dans lequel on a placé le curseur soi-même (clic, frappe) : on écrit là.
   const cursorPlaced = useRef<string | null>(null);
   useEffect(() => {
@@ -747,15 +758,14 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     editor?.commands.focus();
   };
 
-  const words = (editor?.storage.characterCount?.words() as number | undefined) ?? 0;
-  const documentEmpty = words === 0 && !docTitle.trim();
+  const documentEmpty = editorEmpty && !docTitle.trim();
   const suggestions = selection
     ? SELECTION_SUGGESTIONS
     : !withDocument
       ? FREE_SUGGESTIONS
-      : words < 30
-      ? EMPTY_DOC_SUGGESTIONS
-      : DOC_SUGGESTIONS;
+      : editorEmpty
+        ? EMPTY_DOC_SUGGESTIONS
+        : DOC_SUGGESTIONS;
 
   return (
     <aside
