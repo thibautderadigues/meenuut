@@ -337,15 +337,15 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
   const requestedRange = (ed: Editor, prompt: string) => {
     const { doc } = ed.state;
     const endRange = () => {
-      return endRange();
-    };
-    if (/(^|[\s,;:(])(tout en bas|en bas|à la fin|a la fin|en fin de|en dernier|fin du (doc|document|texte)|dernier paragraphe)(?=$|[\s,.;:!?)])/i.test(prompt)) {
       // Une ligne vide en fin de document est remplacée plutôt que laissée au-dessus.
       const last = doc.lastChild;
       if (last?.isTextblock && last.content.size === 0) {
         return { from: doc.content.size - last.nodeSize, to: doc.content.size };
       }
       return { from: doc.content.size, to: doc.content.size };
+    };
+    if (/(^|[\s,;:(])(tout en bas|en bas|à la fin|a la fin|en fin de|en dernier|fin du (doc|document|texte)|dernier paragraphe)(?=$|[\s,.;:!?)])/i.test(prompt)) {
+      return endRange();
     }
     if (/(^|[\s,;:(])(tout en haut|en haut|au début|au debut|en premier|début du (doc|document|texte)|avant tout)(?=$|[\s,.;:!?)])/i.test(prompt)) {
       return { from: 0, to: 0 };
