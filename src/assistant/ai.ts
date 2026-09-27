@@ -251,7 +251,7 @@ export function actionHint(
   if (/\b(corrige|modifie|change|remplace|supprime|enlève|retire|améliore|reformule|réécris|réécrire|raccourcis|simplifie|mets à jour|mets-le|harmonise|traduis)\w*/.test(text)) {
     return 'edits';
   }
-  if (/^(écris|ecris|rédige|redige|ajoute|continue|poursuis|termine|complète)\b/.test(text)) return 'write';
+  if (/^(écris|ecris|rédige|redige|ajoute|rajoute|ajouter|rajouter|insère|insere|mets|continue|poursuis|termine|complète|complete)\w*\b/.test(text)) return 'write';
   return null;
 }
 

@@ -11,8 +11,11 @@ import {
   getPending,
   getPendings,
   onSuggestionSettled,
+  finishWriting,
   pendingText,
   rejectAll,
+  resumeWriting,
+  revealSuggestion,
   rejectSuggestion,
   writeSuggestion,
 } from '../editor/aiSuggestion';
@@ -443,10 +446,21 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     let lastPaint = 0;
     // Retouche : la suggestion existe déjà ; réécriture d'un extrait : on l'ouvre sur l'extrait.
     let suggestion: { id: number; kind: 'block' | 'inline' } | null = null;
-    if (editor && mode === 'revise' && pending) suggestion = { id: pending.id, kind: pending.kind === 'inline' ? 'inline' : 'block' };
-    if (editor && mode === 'rewrite' && target) {
-      suggestion = { id: beginSuggestion(editor, target.from, target.to, 'inline'), kind: 'inline' };
+    if (editor && mode === 'revise' && pending) {
+      suggestion = { id: pending.id, kind: pending.kind === 'inline' ? 'inline' : 'block' };
+      resumeWriting(editor, pending.id);
     }
+    if (editor && mode === 'rewrite' && target) {
+      suggestion = { id: beginSuggestion(editor, target.from, target.to, 'inline', true), kind: 'inline' };
+    }
+    // Suivre l'écriture dans le document, sauf si l'on fait défiler soi-même.
+    let follow = true;
+    const stopFollowing = () => {
+      follow = false;
+    };
+    window.addEventListener('wheel', stopFollowing, { passive: true, once: true });
+    window.addEventListener('touchmove', stopFollowing, { passive: true, once: true });
+    if (editor && suggestion) revealSuggestion(editor, suggestion.id);
     if (suggestion) {
       updateMessage(answerId, {
         proposal: { kind: 'inline', mode: 'rewrite' },
@@ -467,7 +481,8 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
     // L'IA a choisi d'écrire au curseur : on ouvre la suggestion à cet endroit.
     const startWriting = () => {
       if (!editor || !writeRange) return;
-      suggestion = { id: beginSuggestion(editor, writeRange.from, writeRange.to, 'block'), kind: 'block' };
+      suggestion = { id: beginSuggestion(editor, writeRange.from, writeRange.to, 'block', true), kind: 'block' };
+      revealSuggestion(editor, suggestion.id);
       updateMessage(answerId, { proposal: { kind: 'inline', mode: 'write' }, suggestionIds: [suggestion.id] });
       if (small) closeAssistant();
     };
@@ -489,6 +504,7 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
           if (performance.now() - lastPaint > 90) {
             writeSuggestion(editor, render(body()), suggestion.id);
             lastPaint = performance.now();
+            if (follow) revealSuggestion(editor, suggestion.id, 'auto');
           }
           updateMessage(answerId, { thinking: false });
         } else if (action === 'create') {
@@ -531,7 +547,16 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
             progress: undefined,
           });
         } else {
-          const { ids, missing } = applyEdits(editor, parsed.edits);
+          const { ids, missing } = applyEdits(editor, parsed.edits, writeRange);
+          if (ids[0] !== undefined) revealSuggestion(editor, ids[0]);
+          if (!ids.length) {
+            // Rien de retrouvé : ce n'est pas un refus, on le dit et on propose de réessayer.
+            updateMessage(answerId, {
+              progress: undefined,
+              error: 'Je n’ai pas retrouvé les passages à modifier dans le document. Réessayez, ou citez le passage visé.',
+            });
+            return;
+          }
           updateMessage(answerId, {
             progress: undefined,
             written: `Modifications proposées dans le document : ${parsed.summary}`,
@@ -565,6 +590,9 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
         });
       }
     } finally {
+      window.removeEventListener('wheel', stopFollowing);
+      window.removeEventListener('touchmove', stopFollowing);
+      if (editor && suggestion) finishWriting(editor, suggestion.id);
       abortRef.current = null;
       setStreaming(false);
       updateMessage(answerId, { thinking: false, streaming: false });
@@ -576,12 +604,20 @@ export function AssistantPanel({ editor, docId, docTitle }: AssistantPanelProps)
    * chaque passage retrouvé est réécrit sur place (l'ancien texte barré), supprimé en
    * suggestion, ou suivi d'un nouveau paragraphe. Les passages introuvables sont comptés.
    */
-  const applyEdits = (ed: Editor, edits: EditOp[]) => {
+  const applyEdits = (ed: Editor, edits: EditOp[], fallback: { from: number; to: number } | null) => {
     const ids: number[] = [];
     let missing = 0;
     for (const edit of edits) {
       const passage = 'find' in edit ? edit.find : edit.after;
       const hit = locate(ed, passage);
+      // Ajout après un passage introuvable : on l'ajoute quand même, là où on écrirait par défaut.
+      if (!hit && 'after' in edit && fallback) {
+        const id = beginSuggestion(ed, fallback.from, fallback.to, 'block');
+        writeSuggestion(ed, markdownToRichHtml(unwrapFence(edit.insert)), id);
+        ids.push(id);
+        fallback = null;
+        continue;
+      }
       if (!hit) {
         missing++;
         continue;

@@ -115,3 +115,8 @@ test('document vide : toute demande de contenu s’y écrit', () => {
   expect(actionHint('Un carnet de voyage pour Lisbonne', true, true)).toBe('write');
   expect(actionHint('Tu peux faire quoi ?', true, true)).toBeNull();
 });
+
+test.each(['rajoute un paragraphe', 'Ajouter une phrase de conclusion', 'Insère un tableau des prix', 'Complète la liste'])(
+  'écriture : %s',
+  (prompt) => expect(actionHint(prompt, true)).toBe('write'),
+);

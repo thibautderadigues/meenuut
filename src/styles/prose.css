@@ -1232,3 +1232,27 @@
 .tiptap .ai-hunk-accept:hover {
   background: color-mix(in srgb, var(--tx-green) 75%, black);
 }
+
+/* Curseur de l'assistant pendant qu'il écrit : là où arrive le texte. */
+.tiptap .ai-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--tx-green);
+  animation: ai-caret-blink 1s steps(2, start) infinite;
+}
+
+/* Entre deux blocs (début d'écriture) : le curseur sur sa propre ligne. */
+.tiptap > .ai-caret {
+  display: block;
+  height: 1.2em;
+  margin: 0.2em 0;
+}
+
+@keyframes ai-caret-blink {
+  to {
+    visibility: hidden;
+  }
+}

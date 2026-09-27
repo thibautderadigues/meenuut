@@ -64,10 +64,7 @@ export function rangeDecorations(
   return blocks;
 }
 
-/**
- * Insère du contenu (à la place de `range`, ou de la sélection) et le signale par le contour.
- * La taille du document avant/après donne l'étendue réellement insérée.
- */
+/** Insère du contenu (à la place de `range`, ou de la sélection), sans effet visuel ensuite. */
 /** Contour orange quelques secondes sur un intervalle déjà présent dans le document. */
 export function flashRange(editor: Editor, from: number, to: number) {
   if (to <= from) return;
@@ -79,7 +76,5 @@ export function flashRange(editor: Editor, from: number, to: number) {
 
 export function insertMarked(editor: Editor, content: Content, range?: { from: number; to: number }) {
   const { from, to } = range ?? editor.state.selection;
-  const before = editor.state.doc.content.size;
   editor.chain().focus().insertContentAt({ from, to }, content).run();
-  flashRange(editor, from, to + (editor.state.doc.content.size - before));
 }

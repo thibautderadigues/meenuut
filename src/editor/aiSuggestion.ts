@@ -3,7 +3,7 @@ import { Extension } from '@tiptap/core';
 import type { Node as PMNode, Slice } from '@tiptap/pm/model';
 import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
-import { flashRange, rangeDecorations } from './aiHighlight';
+import { rangeDecorations } from './aiHighlight';
 
 /**
  * Suggestions de l'assistant écrites directement dans le document, en attente de validation
@@ -25,11 +25,15 @@ export interface Pending {
   original: Slice;
   /** block : paragraphes insérés ; inline : texte réécrit dans une phrase ; delete : à supprimer. */
   kind: 'block' | 'inline' | 'delete';
+  /** L'IA est en train d'écrire : curseur au bout, boutons une fois qu'elle a fini. */
+  writing?: boolean;
 }
 
 type Meta =
   | { add: Pending }
   | { range: { id: number; from: number; to: number } }
+  | { done: number }
+  | { writing: number }
   | { remove: number }
   | 'clear';
 
@@ -92,6 +96,12 @@ export const AiSuggestion = Extension.create({
               );
             }
             if (meta && 'remove' in meta) next = next.filter((pending) => pending.id !== meta.remove);
+            if (meta && 'writing' in meta) {
+              next = next.map((pending) => (pending.id === meta.writing ? { ...pending, writing: true } : pending));
+            }
+            if (meta && 'done' in meta) {
+              next = next.map((pending) => (pending.id === meta.done ? { ...pending, writing: false } : pending));
+            }
             return next;
           },
         },
@@ -154,6 +164,18 @@ function decorate(editor: Editor, state: EditorState, pending: Pending): Decorat
     );
   }
 
+  // Pendant l'écriture : un curseur au bout du texte qui arrive, pas encore de boutons.
+  if (pending.writing) {
+    decorations.push(
+      Decoration.widget(pending.to, () => element('span', 'ai-caret'), {
+        side: 1,
+        key: `ai-caret-${pending.id}`,
+        ignoreSelection: true,
+      }),
+    );
+    return decorations;
+  }
+
   // Boutons : en haut à droite d'un groupe de blocs, à la suite d'un changement dans une phrase.
   decorations.push(
     blockLevel
@@ -204,14 +226,44 @@ function controls(editor: Editor, id: number, deleting: boolean, placement: 'blo
   return wrapper;
 }
 
-/** Ouvre une suggestion sur l'intervalle donné (vide : simple point d'insertion). Renvoie son id. */
-export function beginSuggestion(editor: Editor, from: number, to: number, kind: Pending['kind']): number {
+/**
+ * Ouvre une suggestion sur l'intervalle donné (vide : simple point d'insertion). Renvoie son id.
+ * `writing` : l'IA va l'écrire en direct (curseur, boutons à la fin via `finishWriting`).
+ */
+export function beginSuggestion(
+  editor: Editor,
+  from: number,
+  to: number,
+  kind: Pending['kind'],
+  writing = false,
+): number {
   const { state } = editor;
   const id = nextId++;
   editor.view.dispatch(
-    state.tr.setMeta(key, { add: { id, from, to, original: state.doc.slice(from, to), kind } }),
+    state.tr.setMeta(key, { add: { id, from, to, original: state.doc.slice(from, to), kind, writing } }),
   );
   return id;
+}
+
+/** L'IA réécrit une suggestion existante (révision) : le curseur revient. */
+export function resumeWriting(editor: Editor, id: number) {
+  if (getPending(editor.state, id)) editor.view.dispatch(editor.state.tr.setMeta(key, { writing: id }));
+}
+
+/** L'IA a fini d'écrire : on retire le curseur et on montre Accepter / Refuser. */
+export function finishWriting(editor: Editor, id: number) {
+  if (getPending(editor.state, id)) editor.view.dispatch(editor.state.tr.setMeta(key, { done: id }));
+}
+
+/** Met la suggestion sous les yeux : sa fin (là où arrive le texte) au milieu de l'écran. */
+export function revealSuggestion(editor: Editor, id: number, behavior: ScrollBehavior = 'smooth') {
+  const pending = getPending(editor.state, id);
+  if (!pending) return;
+  const coords = editor.view.coordsAtPos(Math.min(pending.to, editor.state.doc.content.size));
+  const target = coords.top - window.innerHeight / 2;
+  if (Math.abs(target) > window.innerHeight * 0.25) {
+    window.scrollBy({ top: target, behavior });
+  }
 }
 
 /** Remplace le contenu d'une suggestion (écriture en direct, révision). Hors historique. */
@@ -255,7 +307,6 @@ export function acceptSuggestion(editor: Editor, id?: number): boolean {
     editor.view.dispatch(
       editor.state.tr.replace(from, from + original.size, final).setMeta(key, { remove: pending.id }),
     );
-    flashRange(editor, from, from + final.size);
   }
   for (const listener of settledListeners) listener(pending.id, 'accepted');
   return true;
