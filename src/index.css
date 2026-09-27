@@ -20,6 +20,9 @@
   --sidebar: #fafafa;
   --selection: rgb(59 156 242 / 0.2);
   --danger: #b42318;
+  /* Assistant : une teinte chaude, distincte de l'accent de l'interface. */
+  --ai: #c96442;
+  --ai-soft: rgb(201 100 66 / 0.1);
   --popover-shadow: 0 1px 2px rgb(0 0 0 / 0.03), 0 8px 24px -6px rgb(0 0 0 / 0.1);
 
   /* Couleurs de texte et de surlignage (valeurs stockées dans les documents : ne pas renommer). */
@@ -61,6 +64,8 @@
   --sidebar: #1a1a19;
   --selection: rgb(124 192 255 / 0.26);
   --danger: #ff8a80;
+  --ai: #e08a6a;
+  --ai-soft: rgb(224 138 106 / 0.13);
   --popover-shadow: 0 0 0 1px rgb(255 255 255 / 0.03), 0 12px 32px -6px rgb(0 0 0 / 0.6);
 
   --tx-gray: #a5a097;
@@ -96,6 +101,8 @@
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
   --color-danger: var(--danger);
+  --color-ai: var(--ai);
+  --color-ai-soft: var(--ai-soft);
   --color-elevated: var(--elevated);
   --color-sidebar: var(--sidebar);
   --shadow-popover: var(--popover-shadow);

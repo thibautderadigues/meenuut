@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { displayHref, normalizeHref } from '../lib/links';
 import { isModKey, keys } from '../lib/platform';
 import { IconButton } from '../ui/IconButton';
-import { CheckIcon, ExternalIcon, LinkIcon, PencilIcon, UnlinkIcon } from '../ui/icons';
+import { openAssistant } from '../assistant/store';
+import { CheckIcon, ExternalIcon, LinkIcon, PencilIcon, SparkleIcon, UnlinkIcon } from '../ui/icons';
 import { activeMarks, MARK_BUTTONS } from './marks';
 import { ColorPicker } from './ColorPicker';
 import type { Point } from '../ui/Popover';
@@ -22,11 +23,12 @@ type ShouldShowProps = Parameters<NonNullable<Parameters<typeof BubbleMenu>[0]['
  */
 interface BubbleToolbarProps {
   editor: Editor;
+  docId: string;
   /** Incrémenté par la barre d'outils pour ouvrir l'édition de lien ici. */
   linkRequest: number;
 }
 
-export function BubbleToolbar({ editor, linkRequest }: BubbleToolbarProps) {
+export function BubbleToolbar({ editor, docId, linkRequest }: BubbleToolbarProps) {
   const [editingLink, setEditingLinkState] = useState(false);
   // Lu par shouldShow, qui vit dans le plugin : doit être à jour immédiatement, pas au prochain rendu.
   const editingLinkRef = useRef(false);
@@ -180,6 +182,19 @@ export function BubbleToolbar({ editor, linkRequest }: BubbleToolbarProps) {
         >
           <LinkIcon />
         </IconButton>
+        <Separator />
+        <button
+          type="button"
+          data-tooltip="Demander à Claude à propos de ce passage"
+          onClick={() => {
+            const { from, to } = editor.state.selection;
+            openAssistant({ docId, from, to, text: editor.state.doc.textBetween(from, to, '\n') });
+          }}
+          className="flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium text-ai transition-colors duration-100 hover:bg-ai-soft focus-visible:outline-2 focus-visible:outline-accent"
+        >
+          <SparkleIcon />
+          Demander
+        </button>
       </div>
     );
   }

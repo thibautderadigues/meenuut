@@ -529,3 +529,29 @@ export const ChartIcon = () => (
     <path d="M8 17v-3" />
   </Icon>
 );
+
+export const SparkleIcon = () => (
+  <Icon>
+    <path d="M12 3.5c.4 3.9 2.6 6.1 6.5 6.5-3.9.4-6.1 2.6-6.5 6.5-.4-3.9-2.6-6.1-6.5-6.5 3.9-.4 6.1-2.6 6.5-6.5Z" />
+    <path d="M18.5 15.5c.2 1.6 1 2.4 2.5 2.5-1.5.1-2.3.9-2.5 2.5-.2-1.6-1-2.4-2.5-2.5 1.5-.1 2.3-.9 2.5-2.5Z" />
+  </Icon>
+);
+
+export const ArrowUpSendIcon = () => (
+  <Icon>
+    <path d="M12 19V5" />
+    <path d="m5 12 7-7 7 7" />
+  </Icon>
+);
+
+export const StopIcon = () => (
+  <Icon>
+    <rect x="7" y="7" width="10" height="10" rx="1.5" />
+  </Icon>
+);
+
+export const PaperclipIcon = () => (
+  <Icon>
+    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+  </Icon>
+);

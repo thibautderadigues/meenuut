@@ -1,6 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { Editor as TiptapEditor } from '@tiptap/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AssistantPanel } from './assistant/AssistantPanel';
+import { toggleAssistant, useAssistant } from './assistant/store';
 import { Toast, type ToastData } from './chrome/Toast';
 import {
   createDocument,
@@ -67,6 +69,7 @@ export function App() {
   const [focusMode, setFocusMode] = useState(false);
   const [editor, setEditor] = useState<TiptapEditor | null>(null);
   const theme = useThemePreference();
+  const assistant = useAssistant();
   const openedId = opened?.meta.id ?? null;
 
   // Route vide ou document introuvable → dernier document modifié.
@@ -276,6 +279,11 @@ export function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!isModKey(event)) return;
+      if (event.code === 'KeyJ' && !event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        toggleAssistant();
+        return;
+      }
       if (event.shiftKey && event.code === 'KeyF') {
         event.preventDefault();
         toggleFocusMode();
@@ -361,7 +369,7 @@ export function App() {
 
       <div
         data-print-full
-        className={`transition-[padding] duration-150 ease-out ${sidebarOpen && !focusMode ? 'md:pl-64' : ''}`}
+        className={`transition-[padding] duration-150 ease-out ${sidebarOpen && !focusMode ? 'md:pl-64' : ''} ${assistant.open ? 'lg:pr-[22rem]' : ''}`}
       >
         {opened && (
           <Editor
@@ -373,6 +381,8 @@ export function App() {
           />
         )}
       </div>
+
+      <AssistantPanel editor={editor} docId={openedId} docTitle={currentTitle} />
 
       <Toast toast={toast} onDismiss={dismissToast} />
       <TooltipLayer />

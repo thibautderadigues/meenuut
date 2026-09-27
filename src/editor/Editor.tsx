@@ -6,6 +6,8 @@ import { StatusBar } from '../chrome/StatusBar';
 import { isEmptyContent, saveBody, type OpenedDocument } from '../db/documents';
 import { isModKey } from '../lib/platform';
 import { useAutosave } from '../lib/useAutosave';
+import { AssistantButton } from '../assistant/AssistantButton';
+import { useAssistant } from '../assistant/store';
 import { SyncIndicator } from '../sync/SyncIndicator';
 import { BubbleToolbar } from './BubbleToolbar';
 import { BlockHandle } from './BlockHandle';
@@ -56,6 +58,7 @@ export function Editor({ doc, title, focusMode, onEditor }: EditorProps) {
   }, [id]);
 
   const { status, savedAt, markDirty, flush, saveNow } = useAutosave(save);
+  const assistantOpen = useAssistant().open;
 
   const editor = useEditor({
     extensions,
@@ -132,8 +135,9 @@ export function Editor({ doc, title, focusMode, onEditor }: EditorProps) {
           <div className="min-w-0 flex-1">
             <Toolbar editor={editor} onLink={() => setLinkRequest((count) => count + 1)} />
           </div>
-          <div className="pr-2 sm:pr-3">
+          <div className="flex items-center gap-0.5 pr-2 sm:pr-3">
             <SyncIndicator />
+            <AssistantButton />
           </div>
         </div>
         <div className="doc-column pt-[6vh]">
@@ -174,12 +178,12 @@ export function Editor({ doc, title, focusMode, onEditor }: EditorProps) {
           />
         </div>
       )}
-      <Outline editor={editor} items={toc} hidden={focusMode} />
+      <Outline editor={editor} items={toc} hidden={focusMode || assistantOpen} />
       {!focusMode && <BlockHandle editor={editor} />}
       {mathTarget && (
         <MathEditor editor={editor} target={mathTarget} onClose={() => setMathTarget(null)} />
       )}
-      <BubbleToolbar editor={editor} linkRequest={linkRequest} />
+      <BubbleToolbar editor={editor} docId={id} linkRequest={linkRequest} />
       <FloatingBlockMenu editor={editor} />
       <StatusBar
         editor={editor}
