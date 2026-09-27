@@ -26,6 +26,7 @@ import {
 import { Menu, type MenuEntry, type Point } from '../ui/Menu';
 import { ColorPicker } from './ColorPicker';
 import { InsertPanel } from './InsertPanel';
+import { TablePicker } from './TablePicker';
 import { insertImages } from './insertImages';
 import { activeMarks, MARK_BUTTONS } from './marks';
 import { SLASH_ITEMS } from './slash/items';
@@ -50,7 +51,7 @@ type ToolbarEntry =
     }
   | 'separator';
 
-type Popup = { kind: 'insert' | 'block' | 'align' | 'table' | 'color'; anchor: Point } | null;
+type Popup = { kind: 'insert' | 'block' | 'align' | 'table' | 'tableSize' | 'color'; anchor: Point } | null;
 
 const BLOCK_TYPES = SLASH_ITEMS.filter((item) => ['paragraph', 'h1', 'h2', 'h3'].includes(item.id));
 
@@ -259,7 +260,7 @@ export function Toolbar({ editor, onLink }: ToolbarProps) {
           id: 'table',
           label: 'Insérer un tableau',
           icon: <TableIcon />,
-          run: (chain) => chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+          popup: open('tableSize'),
         },
     {
       id: 'image',
@@ -460,6 +461,9 @@ export function Toolbar({ editor, onLink }: ToolbarProps) {
       )}
       {popup?.kind === 'table' && (
         <Menu label="Tableau" anchor={popup.anchor} onClose={closePopup} entries={tableEntries} />
+      )}
+      {popup?.kind === 'tableSize' && (
+        <TablePicker editor={editor} anchor={popup.anchor} onClose={closePopup} />
       )}
       {popup?.kind === 'insert' && (
         <InsertPanel editor={editor} anchor={popup.anchor} onClose={closePopup} />

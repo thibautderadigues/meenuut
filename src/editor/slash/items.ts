@@ -20,6 +20,7 @@ import {
   TextIcon,
 } from '../../ui/icons';
 import { insertImages } from '../insertImages';
+import { requestTablePicker } from '../TablePicker';
 
 export interface SlashItem {
   id: string;
@@ -120,7 +121,11 @@ export const SLASH_ITEMS: SlashItem[] = [
     label: 'Tableau',
     keywords: ['table', 'grille', 'colonnes'],
     icon: TableIcon,
-    run: (chain) => chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+    // Comme dans Word : on choisit d'abord la taille dans une grille.
+    run: (chain, editor) => {
+      chain.run();
+      requestTablePicker(editor);
+    },
   },
   {
     id: 'image',
