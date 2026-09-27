@@ -97,7 +97,13 @@ export function createExtensions(hooks: ExtensionHooks): Extensions {
     Color,
     Subscript,
     Superscript,
-    TextAlign.configure({ types: ['heading', 'paragraph'] }),
+    TextAlign.extend({
+      // ⌘⇧R reste au navigateur (rechargement forcé) : pas de raccourci pour aligner à droite.
+      addKeyboardShortcuts() {
+        const { 'Mod-Shift-r': _alignRight, ...shortcuts } = this.parent?.() ?? {};
+        return shortcuts;
+      },
+    }).configure({ types: ['heading', 'paragraph'] }),
     TableKit.configure({ table: { resizable: true, cellMinWidth: 80 } }),
     Image.configure({
       allowBase64: true,

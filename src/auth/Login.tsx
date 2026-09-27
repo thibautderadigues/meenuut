@@ -4,12 +4,28 @@ import { supabase } from '../sync/supabase';
 type LoginState =
   | { step: 'form'; error?: string }
   | { step: 'sending' }
-  | { step: 'sent'; email: string };
+  | { step: 'sent'; email: string; checking?: boolean; error?: string };
 
-/** Connexion par lien magique : pas de mot de passe, un compte est créé au premier lien. */
+/** Connexion par e-mail (lien ou code) : pas de mot de passe, le compte est créé à la première connexion. */
 export function Login() {
   const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
   const [state, setState] = useState<LoginState>({ step: 'form' });
+
+  // Le code marche partout, y compris dans l'app installée sur l'écran d'accueil,
+  // où le lien s'ouvrirait dans le navigateur et non dans l'app.
+  const onVerify = async (event: FormEvent, email: string) => {
+    event.preventDefault();
+    const token = code.replace(/\s/g, '');
+    if (!token) return;
+    setState({ step: 'sent', email, checking: true });
+    const { error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
+    // En cas de succès, AuthGate prend le relais.
+    if (error) {
+      console.error(error);
+      setState({ step: 'sent', email, error: 'Code incorrect ou expiré.' });
+    }
+  };
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -41,13 +57,40 @@ export function Login() {
       {state.step === 'sent' ? (
         <div className="mt-6 animate-fade-in space-y-3 text-sm text-ink-muted">
           <p>
-            Un lien de connexion a été envoyé à{' '}
-            <strong className="font-medium text-ink">{state.email}</strong>.
+            Un e-mail a été envoyé à{' '}
+            <strong className="font-medium text-ink">{state.email}</strong>. Cliquez sur le lien,
+            ou saisissez le code qu’il contient :
           </p>
-          <p>Ouvrez-le dans ce même navigateur pour accéder à vos documents.</p>
+          <form onSubmit={(event) => void onVerify(event, state.email)} className="space-y-3">
+            <input
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
+              placeholder="123456"
+              aria-label="Code reçu par e-mail"
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              className="h-10 w-full rounded-md border border-rule-strong bg-canvas px-3 text-center font-mono text-base tracking-[0.3em] text-ink outline-none placeholder:text-ink-faint focus:border-accent"
+            />
+            <button
+              type="submit"
+              disabled={state.checking}
+              className="h-10 w-full rounded-md bg-ink text-sm font-medium text-canvas transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60"
+            >
+              {state.checking ? 'Vérification…' : 'Se connecter'}
+            </button>
+            {state.error && (
+              <p role="alert" className="text-danger">
+                {state.error}
+              </p>
+            )}
+          </form>
           <button
             type="button"
-            onClick={() => setState({ step: 'form' })}
+            onClick={() => {
+              setCode('');
+              setState({ step: 'form' });
+            }}
             className="rounded text-ink underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-accent"
           >
             Utiliser une autre adresse
@@ -67,14 +110,14 @@ export function Login() {
             aria-label="Adresse e-mail"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="h-10 w-full rounded-md border border-rule-strong bg-canvas px-3 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-accent"
+            className="h-10 w-full rounded-md border border-rule-strong bg-canvas px-3 text-base text-ink outline-none placeholder:text-ink-faint focus:border-accent sm:text-sm"
           />
           <button
             type="submit"
             disabled={state.step === 'sending'}
             className="h-10 w-full rounded-md bg-ink text-sm font-medium text-canvas transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60"
           >
-            {state.step === 'sending' ? 'Envoi…' : 'Recevoir un lien de connexion'}
+            {state.step === 'sending' ? 'Envoi…' : 'Recevoir un e-mail de connexion'}
           </button>
           {state.step === 'form' && state.error && (
             <p role="alert" className="text-sm text-danger">

@@ -57,7 +57,7 @@ const BLOCK_TYPES = SLASH_ITEMS.filter((item) => ['paragraph', 'h1', 'h2', 'h3']
 const ALIGNMENTS = [
   { value: 'left', label: 'Aligner à gauche', shortcut: keys('shift', 'mod', 'L'), icon: AlignLeftIcon },
   { value: 'center', label: 'Centrer', shortcut: keys('shift', 'mod', 'E'), icon: AlignCenterIcon },
-  { value: 'right', label: 'Aligner à droite', shortcut: keys('shift', 'mod', 'R'), icon: AlignRightIcon },
+  { value: 'right', label: 'Aligner à droite', shortcut: undefined, icon: AlignRightIcon },
   { value: 'justify', label: 'Justifier', shortcut: keys('shift', 'mod', 'J'), icon: AlignJustifyIcon },
 ] as const;
 

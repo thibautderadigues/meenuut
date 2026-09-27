@@ -82,10 +82,10 @@ export function sampleContent(linkedId: string): JSONContent {
     content: [
       p(
         t('Un éditeur '),
-        t('local', bold),
-        t(', rapide et sans distraction. Tout ce que vous écrivez reste '),
-        t('dans votre navigateur', highlight('yellow')),
-        t(' et s’enregistre tout seul. Ce document fait le tour de ce qu’il sait faire : modifiez-le, cassez-le, supprimez-le.'),
+        t('rapide', bold),
+        t(' et sans distraction. Tout ce que vous écrivez s’enregistre tout seul et '),
+        t('se retrouve sur tous vos appareils', highlight('yellow')),
+        t('. Ce document fait le tour de ce qu’il sait faire : modifiez-le, cassez-le, supprimez-le.'),
       ),
       callout(
         'blue',
@@ -143,10 +143,6 @@ export function sampleContent(linkedId: string): JSONContent {
         t('liens', link('https://tiptap.dev')),
         t('.'),
       ),
-      {
-        type: 'blockquote',
-        content: [p(t('La simplicité est la sophistication suprême.', italic)), p(t('— Léonard de Vinci'))],
-      },
 
       h(2, 'S’organiser'),
       {
@@ -172,11 +168,11 @@ export function sampleContent(linkedId: string): JSONContent {
         t('Chaque encadré a sa couleur et son icône — au trait, en emoji, ou aucune. Les chiffres clés passent de 1 à 4 cartes avec le sélecteur qui apparaît au survol.'),
       ),
       callout('green', 'icon:lightbulb', t('Astuce : ', bold), t('survolez un bloc, la poignée à gauche permet de le glisser, le dupliquer ou le transformer.')),
-      callout('orange', 'icon:warning', t('Vider les données du navigateur efface aussi vos documents : pensez à exporter.')),
+      callout('orange', 'icon:warning', t('Le point en haut à droite indique la synchro : vert, tout est en ligne ; orange, vous êtes hors ligne et vos modifications partiront au retour du réseau.')),
       callout('purple', 'emoji:🎨', t('Un encadré avec un emoji, pour les notes plus personnelles.')),
       callout('gray', 'none', t('Et un encadré sobre, sans icône.')),
       { type: 'pullQuote', content: [p(t('Écrire, c’est d’abord effacer.'))] },
-      metrics(['21', 'types de blocs'], ['0', 'serveur'], ['100 %', 'au clavier'], ['∞', 'documents']),
+      metrics(['21', 'types de blocs'], ['1 s', 'pour être en ligne'], ['100 %', 'au clavier'], ['∞', 'documents']),
       {
         type: 'columns',
         content: [
@@ -233,6 +229,7 @@ export function sampleContent(linkedId: string): JSONContent {
                 [t('Le sommaire, à droite sur grand écran, suit votre lecture.')],
                 [t('Clic droit sur un document : renommer, épingler, changer son icône.')],
                 [t('Le mode focus (⇧⌘F) estompe tout sauf le paragraphe en cours.')],
+                [t('Sur téléphone : Partager → « Sur l’écran d’accueil » pour installer Meenuut comme une app.')],
               ),
             ],
           },
